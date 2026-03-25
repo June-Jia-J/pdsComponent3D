@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Config files
+*.config.js
+*.config.ts
+vite.config.ts
+vite.dev.config.ts
+
+# Public assets
+public/
+*.min.js
+*.min.css
+
+# Generated files
+*.d.ts
+storybook-static/
+.storybook/
+
+# Test files
+coverage/
+test-results/
+playwright-report/
+
+# Temporary files
+*.tmp
+*.temp

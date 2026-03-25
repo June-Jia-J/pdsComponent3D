@@ -1,0 +1,383 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CameraControlsImpl,
+  Clone,
+  Html,
+  Hud,
+  PerspectiveCamera,
+} from "@react-three/drei";
+import { useAtom, useAtomValue } from "jotai";
+import {
+  screenPositionAtom,
+  selectedAreaModelAtom,
+  selectedAreaModelPropsAtom,
+  selectedModelAtom,
+} from "@atoms/selectModel";
+import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import {
+  Group,
+  PerspectiveCamera as PerspectiveCameraImpl,
+  Vector3,
+  Box3,
+  Object3D,
+  MeshStandardMaterial,
+  Mesh,
+} from "three";
+import EnvirComponent from "../GLTFViewer/EnvirComponent";
+import { HubModelProps } from "@/types";
+import globalData from "@/store/globalData";
+// import Roulette from "./Roulette";
+
+export const HubModel: React.FC<HubModelProps> = ({
+  ambientLightIntensity,
+  enableShadows,
+  directionalLightPosition,
+  directionalLightIntensity,
+  hdrUrl,
+  onClick,
+}) => {
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
+  const selectedAreaProps = useAtomValue(selectedAreaModelPropsAtom);
+  const [selectedAreaModel, setSelectedAreaModel] = useAtom(
+    selectedAreaModelAtom
+  );
+  const cameraRef = useRef<PerspectiveCameraImpl>(null);
+  const groupRef = useRef<Group>(null);
+  const { camera, scene, size: screenSize, controls } = useThree();
+  const [currentSelectedArea, setCurrentSelectedArea] =
+    useState<Object3D | null>(null);
+  const [currentSelectedModel, setCurrentSelectedModel] =
+    useState<Object3D | null>(null);
+  const [modelCenter, setModelCenter] = useState<number[]>([0, 0, 0]);
+  const [areaTopPosition, setAreaTopPosition] = useState<number[]>([0, 0, 0]);
+  const [screenPosition, setScreenPosition] = useAtom(screenPositionAtom);
+  const modelCenterRef = useRef<Vector3>(new Vector3());
+  const initialDistance = useRef<number | null>(null);
+  const glowingModelRef = useRef<Object3D | null>(null);
+  const defaultDistance = 12; // 默认10米距离
+
+  // 创建发光效果模型
+  const createGlowingModel = (model: Object3D) => {
+    // 克隆模型
+    const glowingModel = model.clone();
+    glowingModel.scale.copy(model.scale); // 确保与原模型比例一致
+
+    // 设置发光材质
+    glowingModel.traverse((child: Object3D) => {
+      if (child instanceof Mesh) {
+        // 创建新的发光材质
+        const glowMaterial = new MeshStandardMaterial({
+          emissive: 0x0088ff,
+          emissiveIntensity: 1,
+          transparent: true,
+          opacity: 0.5,
+          depthWrite: false,
+        });
+
+        // 保存原始材质的颜色
+        if (child.material instanceof MeshStandardMaterial) {
+          glowMaterial.color = child.material.color.clone();
+        }
+
+        // 应用发光材质
+        child.material = glowMaterial;
+      }
+    });
+
+    // 稍微放大模型以避免z-fighting
+    // glowingModel.scale.multiplyScalar(1);
+
+    return glowingModel;
+  };
+
+  // // 计算一组模型的中心点
+  // const getAreaBox = (models: Object3D[]) => {
+  //   if (!models.length) return new Box3();
+
+  //   // 创建一个包围盒
+  //   const box = new Box3();
+
+  //   // 扩展包围盒以包含所有模型
+  //   models.forEach((model) => {
+  //     const modelBox = new Box3().setFromObject(model);
+  //     box.union(modelBox);
+  //   });
+
+  //   return box;
+  // };
+
+  useEffect(() => {
+    if (!selectedAreaModel) {
+      setCurrentSelectedArea(null);
+      setCurrentSelectedModel(null);
+      initialDistance.current = null;
+      return;
+    }
+
+    if (!selectedModel) {
+      // 移除发光模型
+      if (glowingModelRef.current) {
+        glowingModelRef.current.removeFromParent();
+        glowingModelRef.current = null;
+      }
+      setCurrentSelectedModel(null);
+      return;
+    }
+
+    if (
+      !currentSelectedModel ||
+      currentSelectedModel.name !== selectedModel.name
+    ) {
+      console.log("currentSelectedModel", selectedModel);
+      const newSelectedModel = selectedModel.clone();
+      newSelectedModel.scale.set(1, 1, 1);
+
+      // 移除之前的发光模型（如果存在）
+      if (glowingModelRef.current) {
+        glowingModelRef.current.removeFromParent();
+        glowingModelRef.current = null;
+      }
+
+      // 创建新的发光模型
+      const glowingModel = createGlowingModel(selectedModel); // 使用原始的selectedModel而不是克隆后的
+      glowingModel.position.copy(selectedModel.position);
+      glowingModel.rotation.copy(selectedModel.rotation);
+      glowingModel.scale.copy(selectedModel.scale);
+      glowingModelRef.current = glowingModel;
+
+      setCurrentSelectedModel(newSelectedModel);
+    }
+
+    if (
+      !currentSelectedArea ||
+      currentSelectedArea.name !== selectedAreaModel.name
+    ) {
+      const newSelectedArea = selectedAreaModel.clone();
+      newSelectedArea.scale.set(1, 1, 1);
+      setCurrentSelectedArea(newSelectedArea);
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel, selectedAreaModel]);
+
+  // 同步相机和模型状态
+  useFrame(() => {
+    if (
+      // !currentSelectedModel ||
+      // !selectedModel ||
+      !cameraRef.current ||
+      !groupRef.current ||
+      !currentSelectedArea
+    )
+      return;
+
+    const areaBox = new Box3().setFromObject(currentSelectedArea);
+    const areaCenter = areaBox.getCenter(cameraRef.current.position);
+    const areaSize = areaBox.getSize(new Vector3());
+    modelCenterRef.current = areaCenter;
+
+    // 计算区域顶部位置（中心点 + 高度/2 + 偏移）
+    const topPosition = [
+      areaCenter.x,
+      areaCenter.y + areaSize.y / 2 + 0.3, // 在顶部上方0.5米
+      areaCenter.z,
+    ];
+
+    if (
+      areaTopPosition[0] !== topPosition[0] ||
+      areaTopPosition[1] !== topPosition[1] ||
+      areaTopPosition[2] !== topPosition[2]
+    ) {
+      setAreaTopPosition(topPosition);
+    }
+    // 计算模型的尺寸
+    // const areaSize = areaBox.getSize(new Vector3());
+
+    if (currentSelectedModel) {
+      currentSelectedArea.traverse((child) => {
+        if (child.name === currentSelectedModel.name) {
+          // 计算模型的包围盒和中心点
+          const box = new Box3().setFromObject(child);
+          const center = box.getCenter(new Vector3());
+          const size = box.getSize(new Vector3());
+          const newCenter = [
+            center.x,
+            center.y,
+            center.z + size.z / 2 + 0.1, // 加0.1米的偏移，防止贴得太近
+          ];
+
+          // 计算模型表面的位置（在模型中心的基础上，向前偏移模型尺寸的一半）
+          if (
+            modelCenter[0] !== newCenter[0] ||
+            modelCenter[1] !== newCenter[1] ||
+            modelCenter[2] !== newCenter[2]
+          ) {
+            setModelCenter(newCenter);
+          }
+
+          // 创建一个 Vector3 来存储模型中心点
+          const worldPosition = new Vector3(...newCenter);
+
+          // 将世界坐标转换为标准化设备坐标 (NDC)
+          const vector = worldPosition.project(cameraRef.current!);
+
+          // 将 NDC 坐标转换为屏幕像素坐标
+          const x = ((vector.x + 1) * screenSize.width) / 2;
+          const y = ((-vector.y + 1) * screenSize.height) / 2;
+
+          if (screenPosition.x !== x || screenPosition.y !== y) {
+            setScreenPosition({ x, y });
+          }
+        }
+      });
+    }
+
+    // 保持相机的当前朝向，计算相机前方的方向向量
+    const cameraDirection = new Vector3(0, 0, -1);
+    cameraDirection.applyQuaternion(camera.quaternion);
+
+    // 计算主相机到模型中心的实际距离
+    const currentDistance = camera.position.distanceTo(areaCenter);
+
+    // 如果是首次加载，记录初始距离
+    if (initialDistance.current === null) {
+      initialDistance.current = currentDistance;
+    }
+
+    // 计算缩放比例
+    const scale = Math.min(currentDistance / initialDistance.current, 1);
+
+    // 根据缩放比例计算副相机的实际距离
+    const scaledDistance = defaultDistance * scale;
+
+    // 计算从模型中心沿相机方向反向延伸距离的位置，并添加向下偏移
+    const newPosition = areaCenter
+      .clone()
+      .sub(cameraDirection.multiplyScalar(scaledDistance))
+      .add(new Vector3(0, -2.5, 0));
+
+    // 更新副相机位置和朝向
+    cameraRef.current.position.copy(newPosition);
+
+    // if (
+    //   controls &&
+    //   controls instanceof CameraControlsImpl &&
+    //   selectedAreaProps.center
+    // ) {
+    //   controls.setTarget(
+    //     selectedAreaProps.center.x,
+    //     selectedAreaProps.center.y,
+    //     selectedAreaProps.center.z
+    //   );
+    // }
+
+    cameraRef.current.quaternion.copy(camera.quaternion);
+
+    // 确保模型的朝向与主场景中的模型一致
+    if (groupRef.current) {
+      groupRef.current.quaternion.copy(scene.quaternion);
+    }
+  });
+
+  const handleClick = useCallback(
+    (e: ThreeEvent<globalThis.MouseEvent>) => {
+      e.stopPropagation();
+      onClick(e, true);
+    },
+    [onClick]
+  );
+
+  const clearSelectedModel = useCallback(() => {
+    setSelectedModel(null);
+    setSelectedAreaModel(null);
+    globalData.app?.onRouletteClose?.();
+  }, [setSelectedAreaModel, setSelectedModel]);
+
+  // 渲染 HUD 内容
+  const renderHudContent = useMemo(() => {
+    if (!currentSelectedArea) return null;
+
+    console.log("currentSelectedModel", currentSelectedModel);
+
+    return (
+      <group ref={groupRef}>
+        <Clone
+          deep
+          onClick={handleClick}
+          object={currentSelectedArea}
+          castShadow={false}
+          receiveShadow={false}
+        />
+        {/* {currentSelectedModel && (
+          <Html
+            scale={0.5} // 缩小到原来的 30%
+            zIndexRange={[50, 0]}
+            rotation={[0, 0, 0]}
+            prepend
+            position={modelCenter as [number, number, number]}
+            transform
+            occlude
+            center
+          >
+            <Roulette />
+          </Html>
+        )} */}
+      </group>
+    );
+  }, [currentSelectedArea, currentSelectedModel, handleClick]);
+
+  return (
+    <>
+      {currentSelectedArea && (
+        <>
+          {currentSelectedArea && (
+            <Html
+              position={areaTopPosition as [number, number, number]}
+              style={{
+                cursor: "pointer",
+                transform: "translate(-50%, -100%)",
+                top: 20,
+              }}
+              zIndexRange={[10, 0]}
+              center
+              prepend
+              occlude
+            >
+              <img
+                src={`${globalData.app.publicPath}/images/arrowDown.svg`}
+                alt="arrow"
+                style={{
+                  width: "60px",
+                  height: "60px",
+                  filter: "drop-shadow(0 0 2px rgba(0,0,0,0.5))",
+                }}
+                onClick={clearSelectedModel}
+              />
+            </Html>
+          )}
+          <Hud renderPriority={1}>
+            <PerspectiveCamera
+              ref={cameraRef}
+              makeDefault
+              // position={camera.position.toArray()} // 使用当前相机位置
+              // quaternion={camera.quaternion}
+            />
+            <EnvirComponent
+              ambientLightIntensity={ambientLightIntensity}
+              enableShadows={enableShadows}
+              directionalLightPosition={directionalLightPosition}
+              directionalLightIntensity={directionalLightIntensity}
+              hdrUrl={hdrUrl}
+            />
+            {renderHudContent}
+          </Hud>
+          {glowingModelRef.current && (
+            <primitive object={glowingModelRef.current} />
+          )}
+        </>
+      )}
+    </>
+  );
+};
+
+export default HubModel;

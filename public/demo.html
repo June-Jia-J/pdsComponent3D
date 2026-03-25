@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDS 3D Component Demo</title>
+    <style>
+      /* 全局样式重置 */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+          "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+          "Helvetica Neue", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      #viewer {
+        height: 100%;
+        width: 100%;
+      }
+
+      /* 确保3D画布正确显示 */
+      canvas {
+        display: block;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="width: 100vw; height: 100vh; font-family: Arial, sans-serif">
+      <div id="viewer"></div>
+    </div>
+
+    <script src="/dist/index.umd.js"></script>
+    <script>
+      PdsComponent3D.init3DViewer("viewer", {
+        modelList: [
+          {
+            id: "64c86500ea8c5e40486a5450",
+            fileId: "64c86500ea8c5e40486a5450",
+            Name: "FullScene_S0624",
+            format: "gltf",
+            url: "/public/Upload/Model/FullScene_0721_TextGeo2/FullScene_0721_TextGeo2.gltf",
+            size: 507904, // 496KB
+            checksum: "1234567890",
+          },
+        ],
+        // 可以覆盖默认配置
+        width: "100%",
+        height: "100%",
+        backgroundColor: "#f0f0f0",
+        enableSmartLighting: true,
+        enableAutoFocus: true,
+        showDebug: true,
+        cameraPosition: [-12.99, 10.77, 12.29],
+        cameraTarget: [
+          -2.8214629417629786, 2.2927503999860614, 3.6493685567894656,
+        ],
+      });
+    </script>
+    <!-- 引入组件库 -->
+    <!-- <script type="module">
+      import { init3DViewer, defaultViewerConfig } from "/dist/index.es.js";
+
+      // 初始化3D查看器
+      init3DViewer("viewer", {
+        ...defaultViewerConfig,
+        modelList: [
+          {
+            id: "64c86500ea8c5e40486a5450",
+            fileId: "64c86500ea8c5e40486a5450",
+            Name: "FullScene_S0624",
+            format: "gltf",
+            url: "/public/Upload/Model/FullScene_0721_TextGeo2/FullScene_0721_TextGeo2.gltf",
+            size: 507904, // 496KB
+            checksum: "1234567890",
+          },
+        ],
+        // 可以覆盖默认配置
+        height: "100vh",
+        backgroundColor: "#f0f0f0",
+        enableSmartLighting: true,
+        enableAutoFocus: true,
+        showDebug: true,
+      });
+    </script> -->
+  </body>
+</html>

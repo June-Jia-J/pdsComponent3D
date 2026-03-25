@@ -1,0 +1,44 @@
+import { useEffect, useRef } from "react";
+import { useNearestModel } from "../../hooks/useNearestModel";
+import { useBounds } from "@react-three/drei";
+import { useControls } from "leva";
+
+export const SmartPerspective = () => {
+  const { nearestModel } = useNearestModel();
+  const api = useBounds();
+  const uuidRef = useRef<string | null>(null);
+
+  // 使用 leva 添加动态控制
+  const { padding } = useControls("智能视角", {
+    padding: {
+      value: 1.2,
+      min: 1,
+      max: 2,
+      step: 0.1,
+      label: "视野范围",
+    },
+  });
+
+  useEffect(() => {
+    if (!nearestModel) {
+      uuidRef.current = null;
+      return;
+    }
+
+    // 检查是否是同一个模型
+    if (uuidRef.current === nearestModel.uuid) {
+      return;
+    }
+
+    uuidRef.current = nearestModel.uuid;
+
+    // 使用 bounds API 聚焦到模型
+    api.refresh(nearestModel).fit().clip().fit();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nearestModel, padding]);
+
+  return <></>;
+};
+
+export default SmartPerspective;

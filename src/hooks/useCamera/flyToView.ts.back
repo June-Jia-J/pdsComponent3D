@@ -1,0 +1,203 @@
+import { useCallback, RefObject, useRef } from 'react';
+import { useSpring } from '@react-spring/three';
+import { CameraControls } from '@react-three/drei';
+import { useThree } from '@react-three/fiber';
+import { PerspectiveCamera, Vector3 } from 'three';
+
+interface CameraTransitionOptions {
+  /** 过渡动画持续时间(毫秒) */
+  transitionDuration?: number;
+  /** 可选的外部 CameraControls 引用 */
+  cameraRef?: RefObject<PerspectiveCamera>;
+}
+
+interface CameraTransitionTarget {
+  /** 目标位置，可以是 Vector3 或坐标数组 [x,y,z] */
+  position: Vector3 | [number, number, number];
+  /** 相机看向的目标点，可以是 Vector3 或坐标数组 [x,y,z] */
+  target: Vector3 | [number, number, number];
+  /** 可选的动画持续时间，覆盖默认值 */
+  duration?: number;
+  /** 过渡开始回调 */
+  onTransitionStart?: () => void;
+  /** 过渡结束回调 */
+  onTransitionEnd?: () => void;
+  /** 是否使用源控制器 */
+  useSourceControl?: boolean;
+}
+
+interface CameraTransitionResult {
+  /** 移动相机的函数 */
+  // eslint-disable-next-line no-unused-vars
+  moveCamera: (params: CameraTransitionTarget) => void;
+  /** 指示相机是否正在过渡中 */
+  isTransitioningRef: RefObject<boolean>;
+}
+
+type TSpringValue = {
+  positionX: number;
+  positionY: number;
+  positionZ: number;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+};
+
+/**
+ * 自定义 Hook，用于实现相机平滑移动到指定位置
+ */
+export const useFlyToView = ({
+  cameraRef,
+}: CameraTransitionOptions = {}): CameraTransitionResult => {
+  // 创建内部 CameraControls 引用（如果没有提供外部引用）
+  const { controls: threeControls } = useThree<{ controls: CameraControls }>();
+
+  // 创建动画状态，用于追踪动画是否正在进行
+  const [, api] = useSpring(() => ({
+    positionX: 0,
+    positionY: 0,
+    positionZ: 0,
+    targetX: 0,
+    targetY: 0,
+    targetZ: 0,
+    config: { duration: 1000 },
+    reset: true, // 允许重置动画
+    // config: { mass: 4, friction: 220 },
+  }));
+
+  const isTransitioningRef = useRef(false);
+
+  /**
+   * 移动相机到指定位置
+   */
+  const moveCamera = useCallback(
+    (params: CameraTransitionTarget) => {
+      const {
+        position,
+        target,
+        duration,
+        onTransitionStart,
+        onTransitionEnd,
+        useSourceControl = false,
+      } = params;
+
+      // 优先使用传入的 controls，其次使用内部引用，最后尝试使用 useThree 的 controls
+      const controls = threeControls;
+
+      if (!controls) {
+        console.warn('No camera controls available for transition');
+        return;
+      }
+
+      // 获取当前相机状态
+      let currentPosition = new Vector3();
+      const currentTarget = new Vector3();
+
+      if (cameraRef?.current) {
+        currentPosition = cameraRef.current.position.clone();
+      } else {
+        controls.getPosition(currentPosition);
+        controls.getTarget(currentTarget);
+      }
+
+      // 确保位置和目标是 Vector3 对象
+      const targetPosition =
+        position instanceof Vector3
+          ? position
+          : new Vector3(position[0], position[1], position[2]);
+
+      const targetLookAt =
+        target instanceof Vector3
+          ? target
+          : new Vector3(target[0], target[1], target[2]);
+
+      onTransitionStart?.();
+      isTransitioningRef.current = true;
+
+      if (useSourceControl) {
+        // 更新相机位置和目标
+        controls
+          .setLookAt(
+            targetPosition.x,
+            targetPosition.y,
+            targetPosition.z,
+            targetLookAt.x,
+            targetLookAt.y,
+            targetLookAt.z,
+            true
+          )
+          .then(() => {
+            onTransitionEnd?.();
+            isTransitioningRef.current = false;
+          });
+      } else {
+        // 使用 spring 进行动画
+        api.start({
+          from: {
+            positionX: currentPosition.x,
+            positionY: currentPosition.y,
+            positionZ: currentPosition.z,
+            targetX: currentTarget.x,
+            targetY: currentTarget.y,
+            targetZ: currentTarget.z,
+          },
+          to: {
+            positionX: targetPosition.x,
+            positionY: targetPosition.y,
+            positionZ: targetPosition.z,
+            targetX: targetLookAt.x,
+            targetY: targetLookAt.y,
+            targetZ: targetLookAt.z,
+          },
+          onChange: ({ value }: { value: TSpringValue }) => {
+            // console.log("animation value: ", JSON.stringify(value));
+            // 优先使用传入的 controls，其次使用内部引用，最后尝试使用 useThree 的 controls
+            const controls = threeControls;
+
+            const {
+              positionX: newPositionX,
+              positionY: newPositionY,
+              positionZ: newPositionZ,
+              targetX: newTargetX,
+              targetY: newTargetY,
+              targetZ: newTargetZ,
+            } = value;
+
+            const newPosition = new Vector3(
+              newPositionX,
+              newPositionY,
+              newPositionZ
+            );
+            const newTarget = new Vector3(newTargetX, newTargetY, newTargetZ);
+
+            if (cameraRef?.current) {
+              cameraRef.current.position.copy(newPosition);
+            } else {
+              // 更新相机位置和目标
+              controls.setLookAt(
+                newPosition.x,
+                newPosition.y,
+                newPosition.z,
+                newTarget.x,
+                newTarget.y,
+                newTarget.z,
+                false
+              );
+            }
+          },
+          config: { duration: duration || 1000 },
+          onRest: () => {
+            onTransitionEnd?.();
+            isTransitioningRef.current = false;
+          },
+        });
+      }
+    },
+    [api, cameraRef, threeControls]
+  );
+
+  return {
+    moveCamera,
+    isTransitioningRef,
+  };
+};

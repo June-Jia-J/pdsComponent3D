@@ -1,0 +1,108 @@
+{
+  "name": "pds_component_3d",
+  "version": "1.0.0",
+  "description": "3D component library based on React Three Fiber",
+  "type": "module",
+  "main": "dist/index.umd.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.cjs.js"
+    },
+    "./style": "./dist/styles/index.css"
+  },
+  "scripts": {
+    "dev": "vite --config vite.dev.config.ts",
+    "build": "tsc && vite build",
+    "build:demo": "vite build --config vite.dev.config.ts",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint src --ext ts,tsx --fix",
+    "lint:check": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0 --quiet",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\"",
+    "format:all": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,scss,md}\" --ignore-path .prettierignore",
+    "code-style": "npm run format && npm run lint:fix",
+    "code-style:check": "npm run format:check && npm run lint:check",
+    "preview": "vite preview",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "keywords": [
+    "react",
+    "three.js",
+    "3d",
+    "component",
+    "gltf",
+    "model-viewer",
+    "react-three-fiber"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@react-spring/three": "^10.0.1",
+    "@react-three/cannon": "^6.6.0",
+    "@react-three/drei": "^10.6.1",
+    "@react-three/fiber": "^9.3.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@tweenjs/tween.js": "^25.0.0",
+    "chart.js": "^4.5.0",
+    "gsap": "^3.13.0",
+    "immer": "^10.1.1",
+    "jotai": "^2.12.5",
+    "jotai-immer": "^0.4.1",
+    "leva": "^0.10.0",
+    "postprocessing": "^6.37.7",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-is": "^19.1.1",
+    "styled-components": "^6.1.19",
+    "three": "0.178.0"
+  },
+  "devDependencies": {
+    "@chromatic-com/storybook": "4.1.0",
+    "@eslint/js": "^9.32.0",
+    "@storybook/addon-a11y": "9.1.0",
+    "@storybook/addon-docs": "9.1.0",
+    "@storybook/addon-onboarding": "9.1.0",
+    "@storybook/addon-vitest": "9.1.0",
+    "@storybook/react": "^9.1.1",
+    "@storybook/react-vite": "9.1.0",
+    "@types/node": "^24.1.0",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@types/three": "^0.178.1",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/browser": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.32.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "eslint-plugin-storybook": "9.1.0",
+    "playwright": "^1.54.2",
+    "prettier": "^3.6.2",
+    "storybook": "9.1.0",
+    "terser": "^5.43.1",
+    "three-stdlib": "^2.36.0",
+    "typescript": "5.8.3",
+    "vite": "^7.0.6",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^3.2.4"
+  },
+  "eslintConfig": {
+    "extends": [
+      "plugin:storybook/recommended"
+    ]
+  }
+}

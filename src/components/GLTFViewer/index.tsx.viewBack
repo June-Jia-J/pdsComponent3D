@@ -1,0 +1,575 @@
+import React, {
+  Suspense,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+  useEffect,
+  Ref,
+} from "react";
+import { Canvas } from "@react-three/fiber";
+import {
+  CameraControls,
+  CameraControlsImpl,
+  PerspectiveCamera,
+  AdaptiveDpr,
+  View,
+} from "@react-three/drei";
+import { GLTFViewerProps, LoadingState } from "../../types";
+import GLTFModel from "./GLTFModel";
+import LoadingSpinner from "./LoadingSpinner";
+import ErrorDisplay from "./ErrorDisplay";
+import { SmartLighting } from "../SmartLight";
+import { useControls } from "leva";
+import {
+  Group,
+  Object3D,
+  PerspectiveCamera as PerspectiveCameraImpl,
+} from "three";
+import SmartPerspective from "../SmartPerspective";
+import DeviceInfoLabel from "./DeviceInfoLabel";
+import { useDeviceLabels } from "@/hooks/useDeviceLabels";
+import { DeviceLabelConfig } from "@/types";
+import globalData, { setApp } from "@/store/globalData";
+import BoundingBoxHelper from "../BoundingBoxHelper";
+import EnvirComponent from "./EnvirComponent";
+import { useAtomValue } from "jotai";
+import {
+  selectedModelAtom,
+  screenPositionAtom,
+  selectedAreaModelAtom,
+} from "@/atoms/selectModel";
+import Roulette from "../HubModel/Roulette";
+import Cordon from "../Cordon";
+import ViewModel from "../ViewModel";
+import "./index.css";
+import ArrowDown from "../ArrowDown";
+
+const { ACTION } = CameraControlsImpl;
+
+const GLTFViewer: React.FC<GLTFViewerProps> = ({
+  server = window.location.origin,
+  modelList = [],
+  showLoading = false,
+  setPolarAngle = {
+    min: Math.PI / 6,
+    max: Math.PI / 2.1,
+    nearThreshold: 8,
+    maxPanY: 10,
+    minPanY: -1,
+  },
+  setCameraLimit = {
+    minDistance: 3,
+    maxDistance: 20,
+    panLimit: {
+      margin: { x: -8.37, y: 0, z: -5 },
+    },
+  },
+  forbidSelectionModelNameList = [],
+  width = "100%",
+  height = "100%",
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+  scale = 1,
+  cameraPosition = [0, 0, 5],
+  cameraTarget = [0, 0, 0],
+  backgroundColor = "black",
+  enableShadows = false,
+  ambientLightIntensity = 0.2,
+  directionalLightIntensity = 0.5,
+  directionalLightPosition = [10, 10, 5],
+  deviceLabelConfig,
+  boundingBoxConfig,
+  cordonConfig,
+  modelClick,
+  onLoad,
+  loadStatusCallBack,
+  onProgress,
+  onError,
+  loadingComponent,
+  errorComponent,
+  className,
+  style,
+  enableSmartLighting: smartLightingEnabled = true,
+  smartLightingMode = "camera",
+  enableSmartPerspective: enableSmartPerspectiveEnabled = true,
+  hdrUrl = "./assets/potsdamer_platz_1k.hdr",
+}) => {
+  const [loadingState, setLoadingState] = useState<LoadingState>({
+    isLoading: true,
+    progress: 0,
+    error: null,
+    loaded: false,
+  });
+
+  const containerRef = useRef<globalThis.HTMLDivElement>(null!);
+
+  const cameraRef = useRef<PerspectiveCameraImpl>(null);
+
+  const modelRef = useRef<{ [id: string]: Ref<Group> }>({});
+  const controlsRef = useRef<CameraControlsImpl>(null);
+  const [modelScene, setModelScene] = useState<Object3D | null>(null);
+
+  const selectedModel = useAtomValue(selectedModelAtom);
+  const selectedArea = useAtomValue(selectedAreaModelAtom);
+  const screenPosition = useAtomValue(screenPositionAtom);
+
+  const [controling, setControling] = useState(false);
+  const controlEndAbleRef = useRef<boolean>(true);
+
+  const environmentIntensity = useMemo(() => {
+    return selectedArea ? 0.2 : 1;
+  }, [selectedArea]);
+
+  const [{ enableSmartLighting, enableSmartPerspective }] = useControls(
+    "基础配置",
+    () => {
+      return {
+        enableSmartLighting: {
+          value: smartLightingEnabled,
+          label: "启用智能灯光",
+        },
+        enableSmartPerspective: {
+          value: enableSmartPerspectiveEnabled,
+          label: "启用智能视角",
+        },
+      };
+    }
+  );
+
+  // 包围盒配置
+  const finalBoundingBoxConfig = useMemo(() => {
+    return {
+      enabled: false,
+      showBox: true,
+      showCenter: true,
+      boxColor: "#00ff00",
+      centerColor: "#ff0000",
+      centerSize: 0.1,
+      lineWidth: 2,
+      ...boundingBoxConfig,
+    };
+  }, [boundingBoxConfig]);
+
+  const [boundingBoxControls] = useControls("包围盒辅助", () => {
+    return {
+      enabled: {
+        value: finalBoundingBoxConfig.enabled,
+        label: "启用包围盒显示",
+      },
+      showBox: {
+        value: finalBoundingBoxConfig.showBox,
+        label: "显示包围盒",
+      },
+      showCenter: {
+        value: finalBoundingBoxConfig.showCenter,
+        label: "显示中心点",
+      },
+      boxColor: {
+        value: finalBoundingBoxConfig.boxColor,
+        label: "包围盒颜色",
+      },
+      centerColor: {
+        value: finalBoundingBoxConfig.centerColor,
+        label: "中心点颜色",
+      },
+      centerSize: {
+        value: finalBoundingBoxConfig.centerSize,
+        min: 0.01,
+        max: 1,
+        step: 0.01,
+        label: "中心点大小",
+      },
+    };
+  });
+  // 直接使用deviceLabelConfig，设置默认值
+  const finalDeviceLabelConfig = useMemo(() => {
+    if (!deviceLabelConfig) {
+      return {
+        enabled: false,
+        globalVisible: false,
+        labels: [],
+        defaultOffset: [0, 1, 0] as [number, number, number],
+        autoPosition: true,
+      };
+    }
+
+    return {
+      enabled: true,
+      globalVisible: true,
+      defaultOffset: [0, 1, 0] as [number, number, number],
+      autoPosition: true,
+      ...deviceLabelConfig,
+    };
+  }, [deviceLabelConfig]);
+
+  // 设备标签管理
+  const {
+    labels: deviceLabelInstances,
+    addLabels,
+    clearLabels,
+  } = useDeviceLabels(modelScene || undefined, {
+    defaultOffset: finalDeviceLabelConfig.defaultOffset,
+    autoPosition: finalDeviceLabelConfig.autoPosition,
+    positionMode: finalDeviceLabelConfig.positionMode || "bbox-top",
+  });
+
+  // 调试信息：检查设备标签实例
+  // console.log("📱 当前设备标签实例数量:", deviceLabelInstances.length);
+
+  // 稳定化标签列表，避免不必要的重新渲染
+  const stableLabels = useMemo(() => {
+    return finalDeviceLabelConfig.labels || [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(finalDeviceLabelConfig.labels)]);
+
+  // 初始化和更新设备标签
+  useEffect(() => {
+    console.log("🔄 设备标签配置更新:", {
+      enabled: finalDeviceLabelConfig.enabled,
+      labelsLength: stableLabels.length,
+      labels: stableLabels,
+    });
+
+    if (finalDeviceLabelConfig.enabled && stableLabels.length > 0) {
+      console.log("✅ 添加设备标签:", stableLabels.length, "个");
+      clearLabels();
+      addLabels(stableLabels as DeviceLabelConfig[]);
+    } else {
+      console.log(
+        "🚫 清理设备标签 - 原因:",
+        !finalDeviceLabelConfig.enabled ? "已禁用" : "无标签"
+      );
+      clearLabels();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalDeviceLabelConfig.enabled, stableLabels]);
+
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      clearLabels();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 模型加载完成后设置场景
+  const handleModelLoad = useCallback((scene: Object3D) => {
+    setModelScene(scene);
+  }, []);
+
+  const handleLoad = useCallback(
+    (scene?: Object3D) => {
+      setLoadingState((prev) => ({ ...prev, isLoading: false, loaded: true }));
+      if (scene) {
+        onLoad?.(scene);
+        handleModelLoad(scene);
+        loadStatusCallBack?.("loadComplete", scene);
+
+        setApp({
+          scene,
+        });
+      }
+    },
+    [onLoad, handleModelLoad, loadStatusCallBack]
+  );
+
+  const handleProgress = useCallback(
+    (progress: number) => {
+      setLoadingState((prev) => ({ ...prev, progress }));
+      onProgress?.(progress);
+    },
+    [onProgress]
+  );
+
+  const handleError = useCallback(
+    (error: Error) => {
+      setLoadingState((prev) => ({ ...prev, isLoading: false, error }));
+      onError?.(error);
+    },
+    [onError]
+  );
+
+  const handleControlEnd = useCallback(() => {
+    // globalData.app?.onControlEnd?.();
+    controlEndAbleRef.current = true;
+    setControling(false);
+  }, []);
+
+  const handleEndTimer = useRef<globalThis.NodeJS.Timeout | null>(null);
+
+  const handleEnd = useCallback(() => {
+    if (handleEndTimer.current) {
+      globalThis.clearTimeout(handleEndTimer.current);
+    }
+    handleEndTimer.current = globalThis.setTimeout(() => {
+      globalData.app?.onControlEnd?.();
+    }, 300);
+  }, []);
+
+  const handleChange = useCallback(() => {
+    handleEnd();
+  }, [handleEnd]);
+
+  const handleControlStartTimer = useRef<globalThis.NodeJS.Timeout | null>(
+    null
+  );
+  const handleControlStart = useCallback(() => {
+    if (handleControlStartTimer.current) {
+      globalThis.clearTimeout(handleControlStartTimer.current);
+    }
+    controlEndAbleRef.current = false;
+    handleControlStartTimer.current = globalThis.setTimeout(() => {
+      if (!controlEndAbleRef.current) {
+        setControling(true);
+      }
+    }, 300);
+  }, []);
+
+  // useEffect(() => {
+  //   if (controlsRef.current) {
+  //     controlsRef.current.setLookAt(
+  //       cameraPosition[0],
+  //       cameraPosition[1],
+  //       cameraPosition[2],
+  //       cameraTarget[0],
+  //       cameraTarget[1],
+  //       cameraTarget[2]
+  //     );
+  //   }
+  // }, [cameraPosition, cameraTarget]);
+
+  const containerStyle = useMemo<React.CSSProperties>(() => {
+    return {
+      width,
+      height,
+      position: "relative",
+      ...style,
+    };
+  }, [height, style, width]);
+
+  // 如果有错误，显示错误组件
+  if (loadingState.error) {
+    return (
+      <div className={className} style={containerStyle}>
+        {errorComponent || <ErrorDisplay error={loadingState.error} />}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div ref={containerRef} className={className} style={containerStyle}>
+        {/* 加载状态显示 */}
+        {showLoading && loadingState.isLoading && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(255, 255, 255, 0.9)",
+              zIndex: 10,
+            }}
+          >
+            {loadingComponent || (
+              <LoadingSpinner progress={loadingState.progress} />
+            )}
+          </div>
+        )}
+
+        <View index={1} className="view1">
+          <AdaptiveDpr pixelated />
+
+          {/* 背景 */}
+          <color attach="background" args={[backgroundColor]} />
+
+          <EnvirComponent
+            ambientLightIntensity={ambientLightIntensity}
+            enableShadows={enableShadows}
+            directionalLightPosition={directionalLightPosition}
+            directionalLightIntensity={directionalLightIntensity}
+            environmentIntensity={environmentIntensity}
+            hdrUrl={hdrUrl}
+          />
+
+          {/* 模型 */}
+          <Suspense fallback={null}>
+            {modelList.map((model) => {
+              if (!modelRef.current[model.id]) {
+                modelRef.current[model.id] = { current: null };
+              }
+              return (
+                <GLTFModel
+                  key={model.id}
+                  ref={modelRef.current[model.id]}
+                  url={`${server}${model.url}`}
+                  position={position}
+                  rotation={rotation}
+                  scale={scale}
+                  onLoad={handleLoad}
+                  onProgress={handleProgress}
+                  onError={handleError}
+                  forbidSelectionModelNameList={forbidSelectionModelNameList}
+                  modelClick={modelClick}
+                  cameraPosition={cameraPosition}
+                  cameraTarget={cameraTarget}
+                  ambientLightIntensity={ambientLightIntensity}
+                  enableShadows={enableShadows}
+                  directionalLightPosition={directionalLightPosition}
+                  directionalLightIntensity={directionalLightIntensity}
+                  hdrUrl={hdrUrl}
+                />
+              );
+            })}
+          </Suspense>
+
+          {/* 设备标签 */}
+          {finalDeviceLabelConfig.enabled &&
+            finalDeviceLabelConfig.globalVisible && (
+              <>
+                {deviceLabelInstances.map((labelInstance) => (
+                  <DeviceInfoLabel
+                    key={labelInstance.id}
+                    position={labelInstance.finalPosition}
+                    width={labelInstance.width}
+                    height={labelInstance.height}
+                    bgUrl={labelInstance.bgUrl}
+                    iconUrl={labelInstance.iconUrl}
+                    labelList={labelInstance.labelList}
+                    onClick={(event) =>
+                      labelInstance.onClick?.(labelInstance.id, event)
+                    }
+                    canvasWidth={labelInstance.canvasWidth}
+                    canvasHeight={labelInstance.canvasHeight}
+                    iconPosition={labelInstance.iconPosition}
+                    iconSize={labelInstance.iconSize}
+                    materialOptions={labelInstance.materialOptions}
+                    lookAtCamera={labelInstance.lookAtCamera}
+                    visible={labelInstance.visible}
+                  />
+                ))}
+              </>
+            )}
+
+          <PerspectiveCamera
+            ref={cameraRef}
+            makeDefault
+            castShadow={enableShadows}
+            receiveShadow={enableShadows}
+            fov={50}
+            near={0.1}
+            far={1000}
+          />
+
+          {cameraRef.current && (
+            <CameraControls
+              ref={(ref) => {
+                controlsRef.current = ref;
+                // setControls(ref);
+              }}
+              // camera={cameraRef.current}
+              makeDefault
+              mouseButtons={{
+                left: selectedArea ? ACTION.NONE : ACTION.TRUCK, // 左键平移
+                middle: ACTION.DOLLY, // 中键缩放
+                right: ACTION.ROTATE, // 右键旋转
+                wheel: ACTION.DOLLY, // 滚轮缩放
+              }}
+              touches={{
+                one: ACTION.TOUCH_ROTATE,
+                two: ACTION.TOUCH_DOLLY_TRUCK,
+                three: ACTION.TOUCH_DOLLY_TRUCK,
+              }}
+              dollyToCursor={true} // 缩放时以鼠标位置为中心
+              infinityDolly={false} // 禁用无限缩放
+              minZoom={1}
+              maxZoom={1}
+              minDistance={setCameraLimit.minDistance} // 最小距离
+              maxDistance={setCameraLimit.maxDistance} // 最大距离
+              maxPolarAngle={setPolarAngle.max} // 最大垂直旋转角度
+              // 限制相机移动
+              truckSpeed={1.0} // 平移速度
+              minPolarAngle={setPolarAngle.min} // 最小垂直旋转角度
+              // boundaryFriction={0.3} // 碰撞边界摩擦力
+              boundaryEnclosesCamera={true} // 确保相机不会穿过边界
+              restThreshold={0.01} // 相机停止移动的阈值
+              onControlStart={handleControlStart}
+              onControlEnd={handleControlEnd}
+              onChange={handleChange}
+            />
+          )}
+
+          {enableSmartLighting && <SmartLighting mode={smartLightingMode} />}
+
+          {enableSmartPerspective && (
+            <SmartPerspective controls={controlsRef} />
+          )}
+
+          {/* 包围盒辅助 */}
+          {boundingBoxControls.enabled && modelScene && (
+            <BoundingBoxHelper
+              target={modelScene}
+              showBox={boundingBoxControls.showBox}
+              showCenter={boundingBoxControls.showCenter}
+              boxColor={boundingBoxControls.boxColor}
+              centerColor={boundingBoxControls.centerColor}
+              centerSize={boundingBoxControls.centerSize}
+              lineWidth={finalBoundingBoxConfig.lineWidth}
+            />
+          )}
+
+          {/* 标识箭头 */}
+          {selectedArea && <ArrowDown />}
+        </View>
+
+        {/* ViewModel 组件 */}
+        <View index={2} className="view2">
+          <ViewModel
+            ambientLightIntensity={ambientLightIntensity}
+            enableShadows={enableShadows}
+            directionalLightPosition={directionalLightPosition}
+            directionalLightIntensity={directionalLightIntensity}
+            hdrUrl={hdrUrl}
+          />
+        </View>
+
+        {/* 3D场景 */}
+        <Canvas
+          // frameloop="demand"
+          camera={cameraRef.current || undefined}
+          shadows={enableShadows}
+          gl={{
+            antialias: true,
+            alpha: true,
+            preserveDrawingBuffer: true,
+          }}
+          eventSource={containerRef}
+          style={{ width: "100%", height: "100%" }}
+        >
+          <View.Port />
+        </Canvas>
+      </div>
+      {selectedModel && (
+        <div
+          style={{
+            position: "absolute",
+            top: screenPosition.y,
+            left: screenPosition.x,
+            transform: `translate(-50%, -50%)`,
+            display: controling ? "none" : "block",
+            zIndex: 20,
+          }}
+        >
+          <Roulette />
+        </div>
+      )}
+    </>
+  );
+};
+
+export default GLTFViewer;

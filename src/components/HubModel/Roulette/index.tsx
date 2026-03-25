@@ -1,0 +1,606 @@
+import {
+  useState,
+  FC,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+  CSSProperties,
+} from 'react';
+import styled from '@emotion/styled';
+import { useAtom } from 'jotai';
+import { selectedModelAtom } from '@/atoms/selectModel';
+import globalData from '@/store/globalData';
+import { selectedIdAtom } from '@/atoms/rouletteModel';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  PieController,
+  ChartOptions,
+  ChartData,
+} from 'chart.js';
+import type { TCreateRadialGradient3 } from '@/types';
+
+// 注册Chart.js组件
+ChartJS.register(ArcElement, Tooltip, Legend, PieController);
+
+const cache = new Map();
+let width: number | null = null;
+let height: number | null = null;
+
+const createRadialGradient3: TCreateRadialGradient3 = (context, c1, c2, c3) => {
+  const chartArea = context.chart.chartArea;
+  if (!chartArea) {
+    // This case happens on initial chart load
+    return;
+  }
+
+  const chartWidth = chartArea.right - chartArea.left;
+  const chartHeight = chartArea.bottom - chartArea.top;
+  if (width !== chartWidth || height !== chartHeight) {
+    cache.clear();
+  }
+  let gradient = cache.get(c1 + c2 + c3);
+  if (!gradient) {
+    // Create the gradient because this is either the first render
+    // or the size of the chart has changed
+    width = chartWidth;
+    height = chartHeight;
+    const centerX = (chartArea.left + chartArea.right) / 2;
+    const centerY = (chartArea.top + chartArea.bottom) / 2;
+    const r = Math.min(
+      (chartArea.right - chartArea.left) / 2,
+      (chartArea.bottom - chartArea.top) / 2
+    );
+    const ctx = context.chart.ctx;
+    gradient = ctx.createRadialGradient(
+      centerX,
+      centerY,
+      0,
+      centerX,
+      centerY,
+      r
+    );
+    gradient.addColorStop(0, c1);
+    gradient.addColorStop(0.5, c2);
+    gradient.addColorStop(1, c3);
+    cache.set(c1 + c2 + c3, gradient);
+  }
+
+  return gradient;
+};
+
+interface RouletteOption {
+  id: string;
+  label: string;
+  icon?: string;
+  onClick?: () => void;
+}
+
+interface ChartRouletteProps {
+  options?: RouletteOption[];
+  selectedId?: string;
+  // eslint-disable-next-line no-unused-vars
+  onSelect?: (id: string) => void;
+  onClose?: () => void;
+}
+
+const containerWidth = 150;
+
+const RouletteContainer = styled.div<{
+  displayState: 'none' | 'block';
+}>`
+  position: relative;
+  display: ${props => props.displayState || 'block'};
+  /* transform: translate(-50%, -50%); */
+  width: ${containerWidth}px;
+  height: ${containerWidth}px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+`;
+
+const ChartContainer = styled.div`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+`;
+
+const Canvas = styled.canvas`
+  width: 100% !important;
+  height: 100% !important;
+`;
+
+const CloseButton = styled.div<{ len: number }>`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: rgba(35, 35, 40, 1);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(5px);
+  display: ${props => (props.len <= 1 ? 'none' : 'flex')};
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+
+  &:hover {
+    /* transform: translate(-50%, -50%) scale(1.1); */
+    background: rgba(255, 255, 255, 1);
+  }
+
+  &:before,
+  &:after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 2px;
+    background: rgba(35, 35, 40, 1);
+    transition: all 0.3s ease;
+  }
+
+  &:before {
+    transform: rotate(45deg);
+  }
+
+  &:after {
+    transform: rotate(-45deg);
+  }
+
+  &:hover:before,
+  &:hover:after {
+    background: #00a0e9;
+  }
+`;
+
+const OptionLabel = styled.div<{ isActive: boolean }>`
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(52, 56, 59, 0.8);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: ${props => (props.isActive ? '#10CECA' : '#FFFFFF')};
+  white-space: nowrap;
+  transition: all 0.3s ease;
+  transform: scale(${props => (props.isActive ? 1.1 : 1)});
+  text-shadow: ${props =>
+    props.isActive ? '0 0 10px rgba(0, 160, 233, 0.5)' : 'none'};
+  z-index: ${props => (props.isActive ? 3 : 2)};
+  pointer-events: none;
+`;
+
+const OptionIcon = styled.img<{ isActive: boolean }>`
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  transition: all 0.3s ease;
+  transform: scale(${props => (props.isActive ? 1.1 : 1)});
+  filter: ${props =>
+    props.isActive
+      ? `brightness(0) saturate(100%) invert(56%) sepia(83%) saturate(461%) hue-rotate(140deg) brightness(95%) contrast(101%)`
+      : `brightness(0) saturate(100%) invert(100%)`};
+  pointer-events: none;
+`;
+
+const ChartRoulette: FC<ChartRouletteProps> = ({ onClose }) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
+  const [selectedId, setSelectedId] = useAtom(selectedIdAtom);
+  const containerRef = useRef<globalThis.HTMLDivElement>(null);
+  const canvasRef = useRef<globalThis.HTMLCanvasElement>(null);
+  const chartRef = useRef<ChartJS<'pie'> | null>(null);
+  const [options, setOptions] = useState<RouletteOption[]>([]);
+  const [containerDisplay, setContainerDisplay] = useState<'none' | 'block'>(
+    'none'
+  );
+
+  // eslint-disable-next-line no-unused-vars
+  const clickRef = useRef<(id: string) => void>(() => {});
+
+  const defaultOptions = useMemo(() => {
+    return [
+      // {
+      //   id: "monitoring",
+      //   label: "监测数据",
+      //   icon: `${globalData.app.publicPath}/images/monitoringData.svg`,
+      // },
+      // {
+      //   id: "compare",
+      //   label: "数据对比",
+      //   icon: `${globalData.app.publicPath}/images/compare.svg`,
+      // },
+      // {
+      //   id: "info",
+      //   label: "设备信息",
+      //   icon: `${globalData.app.publicPath}/images/detail.svg`,
+      // },
+      {
+        id: 'diagnosis',
+        label: '诊断结论',
+        icon: `${globalData.app.publicPath}/images/diagnosis.svg`,
+      },
+    ];
+  }, []);
+
+  const mergeOptions = useCallback<
+    // eslint-disable-next-line no-unused-vars
+    (options: RouletteOption[]) => RouletteOption[]
+  >(
+    (options = []) => {
+      return options.length > 0
+        ? options.map(option => {
+            const defaultOption =
+              defaultOptions.find(item => item.id === option.id) || {};
+            return {
+              ...defaultOption,
+              ...option,
+            };
+          })
+        : defaultOptions;
+    },
+    [defaultOptions]
+  );
+
+  const finalOptions = useMemo(() => {
+    return mergeOptions(options);
+  }, [mergeOptions, options]);
+
+  // const handleMouseEnter = useCallback((id: string) => {
+  //   setHoveredId(id);
+  // }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredId(null);
+  }, []);
+
+  // 生成颜色数组
+  const generateColors = (count: number) => {
+    const baseColors = [
+      'rgba(0, 160, 233, 0.6)',
+      'rgba(11, 228, 222, 0.6)',
+      'rgba(0, 160, 233, 0.6)',
+      'rgba(11, 228, 222, 0.6)',
+    ];
+
+    const hoverColors = [
+      'rgba(0, 160, 233, 0.8)',
+      'rgba(11, 228, 222, 0.8)',
+      'rgba(0, 160, 233, 0.8)',
+      'rgba(11, 228, 222, 0.8)',
+    ];
+
+    return {
+      background: baseColors.slice(0, count),
+      hover: hoverColors.slice(0, count),
+    };
+  };
+
+  const colors = useMemo(
+    () => generateColors(finalOptions.length),
+    [finalOptions.length]
+  );
+
+  // 准备图表数据
+  const getChartData = useCallback<
+    // eslint-disable-next-line no-unused-vars
+    (options: RouletteOption[]) => ChartData<'pie'>
+  >(
+    (options = []) => {
+      // 根据选项数量调整数据分布
+      let dataValues: number[] = [];
+
+      if (options.length === 2) {
+        // 二宫格：左右各占一半
+        dataValues = [1, 1];
+      } else if (options.length === 3) {
+        // 三宫格：上方占1/3，下方两个各占1/3
+        dataValues = [1, 1, 1];
+      } else {
+        // 四宫格：四个方向各占1/4
+        dataValues = [1, 1, 1, 1];
+      }
+
+      return {
+        labels: options.map(option => option.label),
+        datasets: [
+          {
+            data: dataValues,
+            backgroundColor: options.map((option, index) => {
+              const isActive =
+                selectedId === option.id || hoveredId === option.id;
+              return isActive ? colors.hover[index] : colors.background[index];
+            }),
+            borderWidth: 2,
+            borderColor: options.map(option => {
+              const isActive =
+                selectedId === option.id || hoveredId === option.id;
+              return isActive
+                ? 'rgba(255, 255, 255, 0.3)'
+                : 'rgba(255, 255, 255, 0.1)';
+            }),
+            hoverBackgroundColor: colors.hover,
+            hoverBorderColor: 'rgba(255, 255, 255, 0.3)',
+            hoverBorderWidth: 3,
+          },
+        ],
+      };
+    },
+    [colors.background, colors.hover, hoveredId, selectedId]
+  );
+
+  clickRef.current = useCallback(
+    (id: string) => {
+      if (selectedModel) {
+        console.log('onSelect: ', id, 'selectedModel: ', selectedModel);
+        globalData.app?.onRouletteClick?.(id, selectedModel);
+      }
+    },
+    [selectedModel]
+  );
+
+  // 图表配置
+  const getChartOptions = useCallback(
+    (options: RouletteOption[] = []): ChartOptions<'pie'> => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          enabled: false,
+        },
+      },
+      animation: false,
+      elements: {
+        arc: {
+          borderWidth: 3,
+          borderColor: 'rgba(255, 255, 255, 0)',
+          backgroundColor: function (context) {
+            let c = colors.background;
+            if (!c) {
+              return;
+            }
+            if (context.active) {
+              c = colors.hover;
+            }
+            return createRadialGradient3(context, c[0], c[1], c[2]);
+          },
+        },
+      },
+      onClick: (_event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const option = options[index];
+          if (option) {
+            clickRef.current?.(option.id);
+          }
+        }
+      },
+      onHover: (_event, elements) => {
+        if (elements.length > 0) {
+          const index = elements[0].index;
+          const option = options[index];
+          if (option) {
+            setHoveredId(option.id);
+          }
+        } else {
+          setHoveredId(null);
+        }
+      },
+    }),
+    [colors.background, colors.hover]
+  );
+
+  const closeHandler = useCallback(() => {
+    let result = null;
+    if (onClose) result = onClose();
+    if (!result) {
+      setSelectedModel(null);
+      globalData.app?.onRouletteClose?.();
+      setSelectedId(null);
+    }
+  }, [onClose, setSelectedId, setSelectedModel]);
+
+  const updateOptions = useCallback(async () => {
+    if (selectedModel && chartRef.current) {
+      const newOptions =
+        globalData.app?.getRouletteOptions?.(selectedModel) || [];
+      setOptions(newOptions);
+
+      const mergedOptions = mergeOptions(newOptions);
+
+      if (mergedOptions.length === 1) {
+        globalData.app?.onRouletteClose?.();
+        await new Promise(resolve => globalThis.setTimeout(resolve, 100));
+        clickRef.current?.(mergedOptions[0].id);
+      }
+    }
+  }, [mergeOptions, selectedModel]);
+
+  // 初始化图表
+  useEffect(() => {
+    if (canvasRef.current && !chartRef.current) {
+      const newOptions =
+        globalData.app?.getRouletteOptions?.(selectedModel) || [];
+      setOptions(newOptions);
+
+      const mergedOptions = mergeOptions(newOptions);
+
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        chartRef.current = new ChartJS(ctx, {
+          type: 'pie',
+          data: getChartData(mergedOptions),
+          options: getChartOptions(mergedOptions),
+        });
+      }
+
+      if (mergedOptions.length === 1) {
+        clickRef.current?.(mergedOptions[0].id);
+      }
+    }
+
+    globalThis.setTimeout(() => {
+      setContainerDisplay('block');
+    }, 300);
+
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.destroy();
+        chartRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    updateOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel]);
+
+  // 更新图表数据
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current.data = getChartData(finalOptions);
+      chartRef.current.options = getChartOptions(finalOptions);
+      chartRef.current.update();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalOptions, selectedId, hoveredId]);
+
+  // 计算标签位置
+  const getLabelPosition = useCallback((index: number, total: number) => {
+    // const angle = (360 / total) * index - 0; // 从顶部开始
+
+    let angle = 0;
+
+    if (total === 2) {
+      // 二宫格：正左边与正右边
+      angle = index === 0 ? 0 : 180; // 左边180度，右边0度
+    } else if (total === 3) {
+      // 三宫格：正上方、左下方、右下方
+      if (index === 0) {
+        angle = -90; // 正上方
+      } else if (index === 1) {
+        angle = 30; // 左下方
+      } else {
+        angle = 150; // 右下方
+      }
+    } else if (total === 4) {
+      // 四宫格：正上、正右、正下、正左
+      angle = index * 90 - 90; // 0, 90, 180, 270度
+    }
+
+    const radius = containerWidth * 0.45;
+    const radian = (angle * Math.PI) / 180;
+
+    const x = Math.cos(radian) * radius + containerWidth / 2;
+    const y = Math.sin(radian) * radius + containerWidth / 2;
+
+    return { x, y };
+  }, []);
+
+  const chartContainerStyle = useMemo<CSSProperties>(() => {
+    const param: CSSProperties = {
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+    };
+    switch (finalOptions.length) {
+      case 0:
+      case 1:
+        param['display'] = 'none';
+        break;
+      case 3:
+        param['transform'] = 'rotate(-60deg)';
+        break;
+      case 4:
+        param['transform'] = 'rotate(-45deg)';
+        break;
+      default:
+        break;
+    }
+    return param;
+  }, [finalOptions.length]);
+
+  const containerStyle = useMemo(() => {
+    const param: CSSProperties = {};
+    if (finalOptions.length <= 1) {
+      param['width'] = '40px';
+      param['height'] = '40px';
+      param['borderRadius'] = '50%';
+      param['overflow'] = 'hidden';
+    }
+
+    return param;
+  }, [finalOptions.length]);
+
+  return (
+    <RouletteContainer
+      displayState={containerDisplay}
+      ref={containerRef}
+      style={containerStyle}
+    >
+      <ChartContainer>
+        <div style={chartContainerStyle} onMouseLeave={handleMouseLeave}>
+          <Canvas ref={canvasRef} />
+        </div>
+
+        {/* 选项标签 */}
+        {finalOptions.length > 1 &&
+          finalOptions.map((option, index) => {
+            const isActive =
+              selectedId === option.id || hoveredId === option.id;
+            const position = getLabelPosition(index, finalOptions.length);
+
+            return (
+              <OptionLabel
+                key={`label-${option.id}`}
+                isActive={isActive}
+                style={{
+                  left: position.x,
+                  top: position.y,
+                  transform: `translate(-50%, -50%) scale(${isActive ? 1.1 : 1})`,
+                  cursor: 'pointer',
+                }}
+                // onMouseEnter={() => handleMouseEnter(option.id)}
+                // onMouseLeave={handleMouseLeave}
+              >
+                {option.icon && (
+                  <OptionIcon
+                    src={option.icon}
+                    alt={option.label}
+                    isActive={isActive}
+                  />
+                )}
+                <span
+                  style={{
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {option.label}
+                </span>
+              </OptionLabel>
+            );
+          })}
+      </ChartContainer>
+
+      <CloseButton onClick={closeHandler} len={finalOptions.length} />
+    </RouletteContainer>
+  );
+};
+
+export default ChartRoulette;

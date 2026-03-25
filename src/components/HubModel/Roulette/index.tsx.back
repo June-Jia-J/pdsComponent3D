@@ -1,0 +1,446 @@
+import { useState, FC, useCallback, useRef, useEffect, useMemo } from "react";
+import styled from "@emotion/styled";
+import { useAtom, useAtomValue } from "jotai";
+import { selectedModelAtom } from "@/atoms/selectModel";
+import globalData from "@/store/globalData";
+import { selectedIdAtom } from "@/atoms/rouletteModel";
+
+interface RouletteOption {
+  id: string;
+  label: string;
+  icon?: string;
+  onClick?: () => void;
+}
+
+interface RouletteProps {
+  options?: RouletteOption[];
+  selectedId?: string;
+  // eslint-disable-next-line no-unused-vars
+  onSelect?: (id: string) => void;
+  onClose?: () => void;
+}
+
+const containerWidth = 150;
+
+const RouletteContainer = styled.div<{
+  displayState: "none" | "block";
+}>`
+  position: relative;
+  display: ${(props) => props.displayState || "block"};
+  transform: translate(-25%, -25%);
+  width: ${containerWidth}px;
+  height: ${containerWidth}px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+`;
+
+const CircleContainer = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: ${containerWidth / 2}px;
+  height: ${containerWidth / 2}px;
+`;
+
+const CloseButton = styled.div`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translateX(104%) translateY(108%) scale(1);
+  width: ${containerWidth / 6.25}px;
+  height: ${containerWidth / 6.25}px;
+  border-radius: 50%;
+  color: rgba(35, 35, 40, 1);
+  background: rgba(255, 255, 255, 1);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: translateX(104%) translateY(108%) scale(1.1);
+  }
+
+  &:before,
+  &:after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 2px;
+    background: rgba(35, 35, 40, 1);
+    transition: all 0.3s ease;
+  }
+
+  &:before {
+    transform: rotate(45deg);
+  }
+
+  &:after {
+    transform: rotate(-45deg);
+  }
+
+  &:hover:before,
+  &:hover:after {
+    background: #00a0e9;
+  }
+`;
+
+const QuarterCircle = styled.div<{
+  rotate: number;
+  isActive: boolean;
+  left: number;
+  angle: number;
+}>`
+  position: absolute;
+  width: ${containerWidth / 2}px;
+  height: ${containerWidth / 2}px;
+  border-radius: 100% 0 0 0;
+  /* background: rgba(0, 0, 0, 0.6); */
+  background: rgba(0, 0, 0, 0);
+  /* backdrop-filter: blur(5px); */
+  left: ${(props) => props.left}px;
+  transform: rotate(${(props) => props.rotate}deg)
+    scale(${(props) => (props.isActive ? 1.05 : 1)});
+  transform-origin: bottom right;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: ${(props) => (props.isActive ? 2 : 1)};
+  cursor: "pointer";
+
+  &:before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 100% 0 0 0;
+    border: 1px solid
+      rgba(255, 255, 255, ${(props) => (props.isActive ? 0.2 : 0)});
+    transition: all 0.3s ease;
+  }
+
+  &:after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 100% 0 0 0;
+    background: ${(props) =>
+      props.isActive
+        ? `linear-gradient(
+        -${props.angle}deg,
+        #0be4de 0%,
+        rgba(11, 228, 222, 0) 100%
+      )`
+        : `linear-gradient(
+      -${props.angle}deg,
+      rgba(11, 228, 222, 0.45) 0%,
+      rgba(11, 228, 222, 0) 79%
+    )`};
+    transition: all 0.3s ease;
+    pointer-events: none;
+  }
+
+  &:hover {
+    /* background: rgba(0, 0, 0, 0.8); */
+    box-shadow: 0 0 20px rgba(0, 160, 233, 0.2);
+  }
+`;
+
+const TitleContainer = styled.div`
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  width: auto;
+  text-align: left;
+  transition: all 0.3s ease;
+  transform-origin: center center;
+  background: rgba(52, 56, 59, 0.65);
+  border-radius: 4px;
+  padding: 4px 8px;
+`;
+
+const TopTitle = styled(TitleContainer)`
+  top: 0;
+  left: 50%;
+`;
+
+const RightTitle = styled(TitleContainer)`
+  top: 50%;
+  right: 0;
+`;
+
+const BottomTitle = styled(TitleContainer)`
+  bottom: 0;
+  left: 50%;
+`;
+
+const LeftTitle = styled(TitleContainer)`
+  top: 50%;
+  left: 0;
+`;
+
+const OptionIcon = styled.img<{ isActive: boolean }>`
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  transition: all 0.3s ease;
+  transform: scale(${(props) => (props.isActive ? 1.1 : 1)});
+  filter: drop-shadow(
+    0 0 5px rgba(0, 160, 233, ${(props) => (props.isActive ? 0.3 : 0)})
+  );
+`;
+
+const OptionText = styled.span<{ isActive: boolean }>`
+  font-size: 14px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+  text-shadow: ${(props) =>
+    props.isActive ? "0 0 10px rgba(0, 160, 233, 0.5)" : "none"};
+`;
+
+// 动态计算旋转角度和标题位置
+const calculateLayout = (optionsLength: number) => {
+  switch (optionsLength) {
+    case 2:
+      return {
+        rotations: [45, 225], // 左上、右下
+        titleComponents: [TopTitle, BottomTitle],
+        angles: [90, 90], // 每个扇形的角度
+      };
+    case 3:
+      return {
+        rotations: [30, 150, 270], // 左上、右上、下
+        titleComponents: [TopTitle, RightTitle, BottomTitle],
+        angles: [120, 120, 120], // 每个扇形的角度
+      };
+    case 4:
+    default:
+      return {
+        rotations: [45, 134, 225, 315], // 左上、右上、右下、左下
+        titleComponents: [TopTitle, RightTitle, BottomTitle, LeftTitle],
+        angles: [90, 90, 90, 90], // 每个扇形的角度
+      };
+  }
+};
+
+const Roulette: FC<RouletteProps> = ({ options = [], onClose }) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
+  const selectedId = useAtomValue(selectedIdAtom);
+  const containerRef = useRef<globalThis.HTMLDivElement>(null!);
+  const [containerDisplay, setContainerDisplay] = useState<"none" | "block">(
+    "none"
+  );
+
+  const defaultOptions = [
+    {
+      id: "monitoring",
+      label: "监测数据",
+      icon: `${globalData.app.publicPath}/images/monitoringData.svg`,
+    },
+    {
+      id: "compare",
+      label: "数据对比",
+      icon: `${globalData.app.publicPath}/images/compare.svg`,
+    },
+    {
+      id: "info",
+      label: "设备信息",
+      icon: `${globalData.app.publicPath}/images/detail.svg`,
+    },
+    {
+      id: "diagnosis",
+      label: "诊断结论",
+      icon: `${globalData.app.publicPath}/images/diagnosis.svg`,
+    },
+  ];
+
+  const finalOptions = options.length ? options : defaultOptions;
+  
+  // 动态计算布局
+  const layout = useMemo(() => calculateLayout(finalOptions.length), [finalOptions.length]);
+  const { rotations, titleComponents, angles } = layout;
+
+  const handleClick = useCallback(
+    (id: string) => () => {
+      if (selectedModel) {
+        console.log("onSelect: ", id, "selectedModel: ", selectedModel);
+        // if (id === "compare") {
+        //   globalData.app?.onRouletteClick?.(selectedModel);
+        // }
+        globalData.app?.onRouletteClick?.(id, selectedModel);
+      }
+    },
+    [selectedModel]
+  );
+
+  const handleMouseEnter = useCallback((id: string) => {
+    setHoveredId(id);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredId(null);
+  }, []);
+
+  const closeHandler = useCallback(() => {
+    let result = null;
+    if (onClose) result = onClose();
+    if (!result) {
+      setSelectedModel(null);
+      globalData.app?.onRouletteClose?.();
+    }
+  }, [onClose, setSelectedModel]);
+
+  useEffect(() => {
+    globalThis.setTimeout(() => {
+      setContainerDisplay("block");
+    }, 300);
+  }, []);
+
+  // 动态计算标题位置
+  const getTitleTransform = (index: number, isActive: boolean) => {
+    const StyledTitle = titleComponents[index];
+    let transform = ``;
+    
+    if (finalOptions.length === 2) {
+      // 二宫格布局
+      if (StyledTitle === TopTitle) {
+        transform += `translateX(-14%) translateY(87%) `;
+      } else if (StyledTitle === BottomTitle) {
+        transform += `translateX(-14%) translateY(137%) `;
+      }
+    } else if (finalOptions.length === 3) {
+      // 三宫格布局
+      if (StyledTitle === TopTitle) {
+        transform += `translateX(-14%) translateY(87%) `;
+      } else if (StyledTitle === RightTitle) {
+        transform += `translateY(69%) translateX(96%) `;
+      } else if (StyledTitle === BottomTitle) {
+        transform += `translateX(-14%) translateY(137%) `;
+      }
+    } else {
+      // 四宫格布局
+      if (
+        StyledTitle === TopTitle ||
+        StyledTitle === BottomTitle
+      ) {
+        transform += `translateX(-14%) `;
+        if (StyledTitle === TopTitle) {
+          transform += `translateY(87%) `;
+        } else {
+          transform += `translateY(137%) `;
+        }
+      }
+      if (
+        StyledTitle === LeftTitle ||
+        StyledTitle === RightTitle
+      ) {
+        transform += `translateY(69%) `;
+        if (StyledTitle === LeftTitle) {
+          transform += `translateX(-30%) `;
+        } else {
+          transform += `translateX(96%) `;
+        }
+      }
+    }
+
+    transform += `scale(${isActive ? 1.1 : 1})`;
+    return transform;
+  };
+
+  return (
+    <RouletteContainer displayState={containerDisplay} ref={containerRef}>
+      <CircleContainer>
+        {finalOptions.map((option, index) => {
+          const isActive = selectedId === option.id || hoveredId === option.id;
+          let left = 0;
+          const StyledTitle = titleComponents[index];
+          
+          if (StyledTitle === LeftTitle) {
+            left = -3;
+          }
+          if (StyledTitle === RightTitle) {
+            left = 3;
+          }
+
+          return (
+            <QuarterCircle
+              key={option.id}
+              rotate={rotations[index]}
+              left={left}
+              isActive={isActive}
+              angle={angles[index]}
+              onClick={handleClick(option.id)}
+              onMouseEnter={() => handleMouseEnter(option.id)}
+              onMouseLeave={handleMouseLeave}
+              style={{
+                // background: isActive
+                //   ? "rgba(0, 0, 0, 0.8)"
+                //   : "rgba(0, 0, 0, 0.6)",
+                background: "rgba(0, 0, 0, 0)",
+              }}
+            />
+          );
+        })}
+      </CircleContainer>
+
+      {finalOptions.map((option, index) => {
+        const isActive = selectedId === option.id || hoveredId === option.id;
+        const StyledTitle = titleComponents[index];
+
+        const transform = getTitleTransform(index, isActive);
+
+        return (
+          <StyledTitle
+            key={`title-${option.id}`}
+            onMouseEnter={() => handleMouseEnter(option.id)}
+            onMouseLeave={handleMouseLeave}
+            onClick={handleClick(option.id)}
+            style={{
+              zIndex: isActive ? 3 : 2,
+              transform: transform,
+              cursor: "pointer",
+              // pointerEvents: "none",
+            }}
+          >
+            {option.icon && (
+              <OptionIcon
+                src={option.icon}
+                alt={option.label}
+                isActive={isActive}
+                style={{
+                  filter: isActive
+                    ? `brightness(0) saturate(100%) invert(56%) sepia(83%) saturate(461%) hue-rotate(140deg) brightness(95%) contrast(101%)`
+                    : `brightness(0) saturate(100%) invert(100%)`,
+                }}
+              />
+            )}
+            <OptionText
+              isActive={isActive}
+              style={{
+                color: isActive ? "#10CECA" : "#FFFFFF",
+              }}
+            >
+              {option.label}
+            </OptionText>
+          </StyledTitle>
+        );
+      })}
+
+      <CloseButton onClick={closeHandler} />
+    </RouletteContainer>
+  );
+};
+
+export default Roulette;

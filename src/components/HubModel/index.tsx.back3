@@ -1,0 +1,467 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CameraControls,
+  CameraControlsImpl,
+  Clone,
+  Hud,
+  PerspectiveCamera,
+} from "@react-three/drei";
+import { useAtom, useAtomValue } from "jotai";
+import {
+  screenPositionAtom,
+  selectedAreaModelAtom,
+  selectedAreaModelPropsAtom,
+  selectedModelAtom,
+} from "@atoms/selectModel";
+import { ThreeEvent, useFrame, useThree } from "@react-three/fiber";
+import {
+  Group,
+  PerspectiveCamera as PerspectiveCameraImpl,
+  Vector3,
+  Box3,
+  Object3D,
+  MeshStandardMaterial,
+  Mesh,
+} from "three";
+import EnvirComponent from "../GLTFViewer/EnvirComponent";
+import { HubModelProps } from "@/types";
+import { selectedIdAtom } from "@/atoms/rouletteModel";
+import BoundingBox from "./BoundingBox";
+
+const { ACTION } = CameraControlsImpl;
+
+const showBox = true;
+
+const showAnimation = true;
+
+export const HubModel: React.FC<HubModelProps> = ({
+  ambientLightIntensity,
+  enableShadows,
+  directionalLightPosition,
+  directionalLightIntensity,
+  hdrUrl,
+  onClick,
+}) => {
+  const [selectedModel] = useAtom(selectedModelAtom);
+  const [selectedAreaModel] = useAtom(selectedAreaModelAtom);
+  const selectedAreaProps = useAtomValue(selectedAreaModelPropsAtom);
+  const [selectedId] = useAtom(selectedIdAtom);
+  const cameraRef = useRef<PerspectiveCameraImpl>(null);
+  const [hudCamera, setHudCamera] = useState<PerspectiveCameraImpl>(null!);
+  const groupRef = useRef<Group>(null);
+  const [hudControls, setHudControls] = useState<CameraControls | null>(null);
+  const { camera, scene, size: screenSize, controls } = useThree();
+  const [currentSelectedArea, setCurrentSelectedArea] =
+    useState<Object3D | null>(null);
+  const [currentSelectedModel, setCurrentSelectedModel] =
+    useState<Object3D | null>(null);
+  const [modelCenter, setModelCenter] = useState<number[]>([0, 0, 0]);
+  // const [areaTopPosition, setAreaTopPosition] = useState<number[]>([0, 0, 0]);
+  const [screenPosition, setScreenPosition] = useAtom(screenPositionAtom);
+  const modelCenterRef = useRef<Vector3>(new Vector3());
+  const glowingModelRef = useRef<Object3D | null>(null);
+  const glowingAreaRef = useRef<Object3D | null>(null);
+  const defaultDistance = 10; // 默认10米距离
+  // eslint-disable-next-line no-unused-vars
+  const handleClickRef = useRef<(e: ThreeEvent<globalThis.MouseEvent>) => void>(
+    () => {}
+  );
+
+  const cameraPositionRef = useRef<Vector3 | null>(null);
+
+  // 创建发光效果模型
+  const createGlowingModel = (model: Object3D) => {
+    // 克隆模型
+    const glowingModel = model.clone();
+    glowingModel.scale.copy(model.scale); // 确保与原模型比例一致
+
+    // 设置发光材质
+    glowingModel.traverse((child: Object3D) => {
+      if (child instanceof Mesh) {
+        // 创建新的发光材质
+        const glowMaterial = new MeshStandardMaterial({
+          emissive: 0x0088ff,
+          emissiveIntensity: 1,
+          transparent: true,
+          opacity: 0.5,
+          depthWrite: false,
+        });
+
+        // 保存原始材质的颜色
+        if (child.material instanceof MeshStandardMaterial) {
+          glowMaterial.color = child.material.color.clone();
+        }
+
+        // 应用发光材质
+        child.material = glowMaterial;
+      }
+    });
+
+    return glowingModel;
+  };
+
+  useEffect(() => {
+    if (!selectedAreaModel) {
+      // 清理发光区域
+      if (glowingAreaRef.current) {
+        glowingAreaRef.current.removeFromParent();
+        glowingAreaRef.current = null;
+      }
+      // 移除发光模型
+      if (glowingModelRef.current) {
+        glowingModelRef.current.removeFromParent();
+        glowingModelRef.current = null;
+      }
+      setCurrentSelectedArea(null);
+      setCurrentSelectedModel(null);
+      return;
+    }
+
+    if (!selectedModel) {
+      // 移除发光模型
+      if (glowingModelRef.current) {
+        glowingModelRef.current.removeFromParent();
+        glowingModelRef.current = null;
+      }
+      setCurrentSelectedModel(null);
+      return;
+    }
+
+    if (
+      !currentSelectedModel ||
+      currentSelectedModel.name !== selectedModel.name
+    ) {
+      console.log("currentSelectedModel", selectedModel);
+      const newSelectedModel = selectedModel.clone();
+      // newSelectedModel.scale.set(1, 1, 1);
+
+      // 移除之前的发光模型（如果存在）
+      if (glowingModelRef.current) {
+        glowingModelRef.current.removeFromParent();
+        glowingModelRef.current = null;
+      }
+
+      // 创建新的发光模型
+      const glowingModel = createGlowingModel(selectedModel); // 使用原始的selectedModel而不是克隆后的
+      glowingModel.position.copy(selectedModel.position);
+      glowingModel.rotation.copy(selectedModel.rotation);
+      glowingModel.scale.copy(selectedModel.scale);
+      glowingModelRef.current = glowingModel;
+
+      setCurrentSelectedModel(newSelectedModel);
+    }
+
+    if (
+      !currentSelectedArea ||
+      currentSelectedArea.name !== selectedAreaModel.name
+    ) {
+      if (showAnimation) {
+        const cloneAreaForAnimation = selectedAreaModel.clone();
+        // 为区域模型添加发光效果
+        cloneAreaForAnimation.traverse((child: Object3D) => {
+          if (child instanceof Mesh) {
+            // 创建发光材质
+            const glowMaterial = new MeshStandardMaterial({
+              emissive: 0x0be4de,
+              emissiveIntensity: 0.4,
+              transparent: true,
+              opacity: 0.85,
+              depthWrite: false,
+              side: 2, // 双面渲染
+            });
+
+            // 保存原始材质的颜色
+            if (child.material instanceof MeshStandardMaterial) {
+              glowMaterial.color = child.material.color.clone();
+            }
+
+            // 应用发光材质
+            child.material = glowMaterial;
+          }
+        });
+
+        // 保存发光区域引用
+        glowingAreaRef.current = cloneAreaForAnimation;
+      }
+
+      const newSelectedArea = selectedAreaModel.clone();
+      // newSelectedArea.scale.set(1, 1, 1);
+      setCurrentSelectedArea(newSelectedArea);
+
+      if (selectedAreaProps.center) {
+        (controls as CameraControlsImpl).setTarget(
+          selectedAreaProps.center.x,
+          selectedAreaProps.center.y,
+          selectedAreaProps.center.z
+        );
+      }
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel, selectedAreaModel]);
+
+  useEffect(() => {
+    if (currentSelectedArea && hudControls) {
+      const areaBox = new Box3().setFromObject(currentSelectedArea);
+      const areaCenter = areaBox.getCenter(new Vector3());
+      // const areaSize = areaBox.getSize(new Vector3());
+      modelCenterRef.current = areaCenter;
+
+      // 保持相机的当前朝向，计算相机前方的方向向量
+      const cameraDirection = new Vector3(0, 0, -1);
+      cameraDirection.applyQuaternion(camera.quaternion);
+
+      const newPosition = areaCenter
+        .sub(cameraDirection.multiplyScalar(defaultDistance))
+        .clone();
+
+      // 计算主相机朝向的方向向量
+      const lookDirection = new Vector3(0, 0, -1);
+      lookDirection.applyQuaternion(camera.quaternion);
+
+      // 计算副相机应该朝向的目标点（从副相机位置沿主相机方向延伸）
+      const lookAtTarget = newPosition
+        .clone()
+        .add(lookDirection.multiplyScalar(defaultDistance));
+
+      // 使用 setLookAt 让副相机朝向与主相机相同的方向
+      hudControls.setLookAt(
+        newPosition.x,
+        newPosition.y,
+        newPosition.z,
+        lookAtTarget.x,
+        lookAtTarget.y,
+        lookAtTarget.z,
+        true
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSelectedArea, hudControls]);
+
+  // 同步相机和模型状态
+  useFrame(() => {
+    if (
+      !cameraRef.current ||
+      !hudControls ||
+      !groupRef.current ||
+      !currentSelectedArea
+    )
+      return;
+
+    const areaBox = new Box3().setFromObject(currentSelectedArea);
+    const areaCenter = areaBox.getCenter(new Vector3());
+    // const areaSize = areaBox.getSize(new Vector3());
+    modelCenterRef.current = areaCenter;
+    // 计算模型的尺寸
+    // const areaSize = areaBox.getSize(new Vector3());
+
+    if (currentSelectedModel) {
+      currentSelectedArea.traverse((child) => {
+        if (child.name === currentSelectedModel.name) {
+          // 计算模型的包围盒和中心点
+          const box = new Box3().setFromObject(child);
+          const center = box.getCenter(new Vector3());
+          const size = box.getSize(new Vector3());
+          const newCenter = [
+            center.x,
+            center.y,
+            center.z + size.z / 2 + 0.1, // 加0.1米的偏移，防止贴得太近
+          ];
+
+          // 计算模型表面的位置（在模型中心的基础上，向前偏移模型尺寸的一半）
+          if (
+            modelCenter[0] !== newCenter[0] ||
+            modelCenter[1] !== newCenter[1] ||
+            modelCenter[2] !== newCenter[2]
+          ) {
+            setModelCenter(newCenter);
+          }
+
+          // 创建一个 Vector3 来存储模型中心点
+          const worldPosition = new Vector3(...newCenter);
+
+          // 将世界坐标转换为标准化设备坐标 (NDC)
+          const vector = worldPosition.project(cameraRef.current!);
+
+          // 将 NDC 坐标转换为屏幕像素坐标
+          const x = ((vector.x + 1) * screenSize.width) / 2;
+          const y = ((-vector.y + 1) * screenSize.height) / 2;
+
+          if (screenPosition.x !== x || screenPosition.y !== y) {
+            setScreenPosition({ x, y });
+          }
+        }
+      });
+    }
+
+    // 确保模型的朝向与主场景中的模型一致
+    if (groupRef.current) {
+      groupRef.current.quaternion.copy(scene.quaternion);
+    }
+
+    // if (showAnimation) {
+    //   // 为发光区域添加脉冲动画效果
+    //   if (glowingAreaRef.current) {
+    //     const time = Date.now() * 0.001; // 获取当前时间（秒）
+    //     const pulseIntensity = 0.2 + 0.2 * Math.sin(time * 2); // 脉冲强度在0.4-0.7之间变化
+
+    //     glowingAreaRef.current.traverse((child: Object3D) => {
+    //       if (
+    //         child instanceof Mesh &&
+    //         child.material instanceof MeshStandardMaterial
+    //       ) {
+    //         child.material.emissiveIntensity = pulseIntensity;
+    //       }
+    //     });
+    //   }
+    // }
+  });
+
+  handleClickRef.current = useCallback(
+    (e: ThreeEvent<globalThis.MouseEvent>) => {
+      e.stopPropagation();
+      onClick?.(e, true);
+    },
+    [onClick]
+  );
+
+  const calCameraPosition = useCallback(async () => {
+    if (selectedAreaProps.size && selectedAreaProps.center) {
+      // 获取当前相机位置
+      const cameraPosition = camera.position.clone();
+      // 计算摄像头向右平移的距离，使模型居于左半边
+      const modelRightSide =
+        selectedAreaProps.center.x + selectedAreaProps.size.x / 2;
+      if (selectedId) {
+        if (!cameraPositionRef.current && cameraPosition.x < modelRightSide) {
+          const rightOffsetDistance = modelRightSide - cameraPosition.x;
+          cameraPositionRef.current = (
+            controls as CameraControlsImpl
+          ).getPosition(new Vector3());
+
+          await (controls as CameraControlsImpl).truck(
+            rightOffsetDistance,
+            0,
+            true
+          );
+        }
+      } else if (cameraPositionRef.current) {
+        const rightOffsetDistance =
+          modelRightSide - cameraPositionRef.current.x;
+        cameraPositionRef.current = null;
+        await (controls as CameraControlsImpl).truck(
+          -rightOffsetDistance,
+          0,
+          true
+        );
+      }
+    }
+  }, [
+    camera.position,
+    controls,
+    selectedAreaProps.center,
+    selectedAreaProps.size,
+    selectedId,
+  ]);
+
+  useEffect(() => {
+    calCameraPosition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // 渲染 HUD 内容
+  const renderHudContent = useMemo(() => {
+    if (!currentSelectedArea) return null;
+
+    console.log("currentSelectedModel", currentSelectedModel);
+
+    return (
+      <group ref={groupRef}>
+        <Clone
+          deep
+          onClick={(e) => {
+            handleClickRef.current?.(e);
+          }}
+          object={currentSelectedArea}
+          castShadow={false}
+          receiveShadow={false}
+        />
+      </group>
+    );
+  }, [currentSelectedArea, currentSelectedModel]);
+
+  return (
+    <>
+      {currentSelectedArea && (
+        <>
+          <Hud renderPriority={1}>
+            <PerspectiveCamera
+              ref={(ref) => {
+                cameraRef.current = ref;
+                if (ref) {
+                  setHudCamera(ref);
+                }
+              }}
+              makeDefault
+              // position={[0, -2, -12]}
+              // position={camera.position.toArray()} // 使用当前相机位置
+              // quaternion={camera.quaternion}
+            />
+            {hudCamera && (
+              <CameraControls
+                ref={(controls) => {
+                  setHudControls(controls);
+                }}
+                camera={hudCamera}
+                // target={modelCenter as [number, number, number]}
+                minDistance={1}
+                maxDistance={10}
+                mouseButtons={{
+                  left: selectedAreaModel ? ACTION.TRUCK : ACTION.NONE, // 左键平移
+                  middle: selectedAreaModel ? ACTION.DOLLY : ACTION.NONE, // 中键缩放
+                  right: selectedAreaModel ? ACTION.ROTATE : ACTION.NONE, // 右键旋转
+                  wheel: selectedAreaModel ? ACTION.DOLLY : ACTION.NONE, // 滚轮缩放
+                }}
+                touches={{
+                  one: ACTION.NONE,
+                  two: ACTION.NONE,
+                  three: ACTION.NONE,
+                }}
+                // onControlStart={() => {
+                //   controledAbleRef.current = true;
+                // }}
+              />
+            )}
+            <EnvirComponent
+              ambientLightIntensity={ambientLightIntensity}
+              enableShadows={enableShadows}
+              directionalLightPosition={directionalLightPosition}
+              directionalLightIntensity={directionalLightIntensity}
+              hdrUrl={hdrUrl}
+            />
+            {renderHudContent}
+          </Hud>
+          {/* 显示区域包围盒 */}
+          {showBox && (
+            <BoundingBox
+              target={selectedAreaModel || undefined}
+              fillColor="rgba(11, 228, 222, 0.25)"
+              borderColor="rgba(11, 228, 222, 1)"
+              fillOpacity={0.25}
+              borderOpacity={1}
+              showBox={true}
+            />
+          )}
+          {glowingModelRef.current && (
+            <primitive object={glowingModelRef.current} />
+          )}
+          {glowingAreaRef.current && (
+            <primitive object={glowingAreaRef.current} />
+          )}
+        </>
+      )}
+    </>
+  );
+};
+
+export default HubModel;
