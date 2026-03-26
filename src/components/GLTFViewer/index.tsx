@@ -110,6 +110,7 @@ const GLTFViewer: React.FC<GLTFViewerProps> = ({
   enableSmartLighting: smartLightingEnabled = false,
   enableSmartPerspective: enableSmartPerspectiveEnabled = false,
   hdrUrl = './assets/potsdamer_platz_1k.hdr',
+  children,
 }) => {
   const [loadingState, setLoadingState] = useState<LoadingState>({
     isLoading: true,
@@ -765,6 +766,8 @@ const GLTFViewer: React.FC<GLTFViewerProps> = ({
             onDecalRemove={handleDecalRemove}
             onManagerReady={handleDecalManagerReady}
           />
+          
+          {children}
         </Canvas>
       </div>
       {selectedModel && (

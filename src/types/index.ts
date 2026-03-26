@@ -187,6 +187,8 @@ export interface GLTFViewerProps extends Omit<ModelViewerProps, 'modelUrl'> {
   enableSmartLighting?: boolean;
   smartLightingMode?: 'camera' | 'model';
   enableSmartPerspective?: boolean;
+  /** Canvas 内部子组件（用于扩展 R3F 功能） */
+  children?: ReactNode;
   /** 设备标签配置（统一管理） */
   deviceLabelConfig?: DeviceLabelManagerConfig;
   /** 标签管理方法回调 */
@@ -424,15 +426,12 @@ export interface DecalConfig {
   type: DecalType;
   modelName: string;
   options?: {
-    // 通用选项
     decalSize?: { x: number; y: number; z: number } | [number, number, number];
     rotation?: { x: number; y: number; z: number } | [number, number, number];
     positionOffset?:
       | { x: number; y: number; z: number }
       | [number, number, number];
     debug?: boolean;
-
-    // 文字贴花选项
     text?: string;
     textConfig?: {
       font?: string;
@@ -441,8 +440,6 @@ export interface DecalConfig {
       padding?: number;
       textureScale?: number;
     };
-
-    // 电流表贴花选项
     ammeterConfig?: {
       bgUrl?: string;
       value?: number;
@@ -457,17 +454,15 @@ export interface DecalConfig {
       centerOffsetX?: number;
       centerOffsetY?: number;
     };
-
-    // 开关贴花选项
     switchConfig?: {
       state?: number;
       states?: number;
     };
-
-    // 信号灯贴花选项
     signalLampConfig?: {
       color?: string;
       glow?: boolean;
     };
   };
 }
+
+export * from './sceneConfig';
