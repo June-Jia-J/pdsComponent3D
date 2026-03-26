@@ -14,6 +14,7 @@ import { Leva } from 'leva';
 import { ModelFile } from '@/types';
 import globalData, { setApp } from '@/store/globalData';
 import { decalConfigs } from '../public/const';
+import { SceneConfigPanel } from './components/SceneConfigPanel';
 // // 创建一个示例GLTF模型URL（使用一个公开的3D模型）
 // const sampleModelUrl = model5.url;
 
@@ -369,7 +370,7 @@ createRoot(document.getElementById('root')!).render(
         </button>
       </header>
 
-      <main style={{ flex: 1 }}>
+      <main style={{ flex: 1, position: 'relative' }}>
         <GLTFViewer
           decalConfigs={decalConfigs}
           modelList={[sampleModel]}
@@ -426,6 +427,8 @@ createRoot(document.getElementById('root')!).render(
           //   }
           // ]}
         />
+        {/* 场景配置控制面板 */}
+        <SceneConfigPanel />
       </main>
     </div>
   </StrictMode>

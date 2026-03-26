@@ -52,6 +52,7 @@ import {
 } from '@/atoms/controlManagement';
 // import { selectedIdAtom } from "@/atoms/rouletteModel";
 import ModelCoordinateCalculator from '../ModelCoordinateCalculator';
+import { SceneConfigProvider, ScenePickingHandler } from '../SceneConfigProvider';
 import DecalManager from '../Decal/DecalManager';
 import {
   useDecalManager,
@@ -574,6 +575,10 @@ const GLTFViewer: React.FC<GLTFViewerProps> = ({
           style={{ width: '100%', height: '100%' }}
         >
           <AdaptiveDpr pixelated />
+          
+          {/* 场景配置系统 */}
+          <SceneConfigProvider controls={controlsRef} defaultLightingPreset="preset-default">
+            <ScenePickingHandler enabled={true} />
 
           {/* 背景 */}
           <color attach='background' args={[backgroundColor]} />
@@ -765,6 +770,8 @@ const GLTFViewer: React.FC<GLTFViewerProps> = ({
             onDecalRemove={handleDecalRemove}
             onManagerReady={handleDecalManagerReady}
           />
+          
+          </SceneConfigProvider>
         </Canvas>
       </div>
       {selectedModel && (
