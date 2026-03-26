@@ -21,65 +21,65 @@ const ExampleUsage: React.FC = () => {
     if (globalData.app) {
       globalData.app.getStatusPanelLeftItems = () => [
         {
-          id: "voltage",
-          label: "电压",
-          value: "220",
-          unit: "V",
-          icon: "/images/voltage.svg",
-          type: "panel" as const,
-          color: "#00FF00"
+          id: 'voltage',
+          label: '电压',
+          value: '220',
+          unit: 'V',
+          icon: '/images/voltage.svg',
+          type: 'panel' as const,
+          color: '#00FF00',
         },
         {
-          id: "current",
-          label: "电流",
-          value: "5.2",
-          unit: "A",
-          icon: "/images/current.svg",
-          type: "panel" as const,
-          color: "#FFA500"
+          id: 'current',
+          label: '电流',
+          value: '5.2',
+          unit: 'A',
+          icon: '/images/current.svg',
+          type: 'panel' as const,
+          color: '#FFA500',
         },
         {
-          id: "power",
-          label: "功率",
-          value: "1144",
-          unit: "W",
-          icon: "/images/power.svg",
-          type: "panel" as const,
-          color: "#FF0000"
-        }
+          id: 'power',
+          label: '功率',
+          value: '1144',
+          unit: 'W',
+          icon: '/images/power.svg',
+          type: 'panel' as const,
+          color: '#FF0000',
+        },
       ];
 
       globalData.app.getStatusPanelRightItems = () => [
         {
-          id: "status",
-          label: "状态",
-          value: "正常",
-          icon: "/images/status.svg",
-          type: "circle" as const,
-          color: "#00FF00"
+          id: 'status',
+          label: '状态',
+          value: '正常',
+          icon: '/images/status.svg',
+          type: 'circle' as const,
+          color: '#00FF00',
         },
         {
-          id: "alarm",
-          label: "告警",
-          value: "0",
-          icon: "/images/alarm.svg",
-          type: "circle" as const,
-          color: "#00FF00"
+          id: 'alarm',
+          label: '告警',
+          value: '0',
+          icon: '/images/alarm.svg',
+          type: 'circle' as const,
+          color: '#00FF00',
         },
         {
-          id: "maintenance",
-          label: "维护",
-          value: "需要",
-          icon: "/images/maintenance.svg",
-          type: "circle" as const,
-          color: "#FFA500"
-        }
+          id: 'maintenance',
+          label: '维护',
+          value: '需要',
+          icon: '/images/maintenance.svg',
+          type: 'circle' as const,
+          color: '#FFA500',
+        },
       ];
 
       // 配置事件处理
       globalData.app.onStatusPanelClick = (id: string, selectedModel: any) => {
         console.log('自定义配置：点击了状态项:', id, '模型:', selectedModel);
-        
+
         // 根据不同的ID执行不同的操作
         switch (id) {
           case 'voltage':
@@ -127,9 +127,9 @@ const ExampleUsage: React.FC = () => {
         const currentItems = globalData.app.getStatusPanelLeftItems();
         const updatedItems = currentItems.map((item: any) => ({
           ...item,
-          value: Math.floor(Math.random() * 1000).toString()
+          value: Math.floor(Math.random() * 1000).toString(),
         }));
-        
+
         globalData.app.getStatusPanelLeftItems = () => updatedItems;
       }
     };
@@ -146,7 +146,7 @@ const ExampleUsage: React.FC = () => {
   return (
     <div>
       <h2>StatusPanel 使用示例</h2>
-      
+
       <div style={{ marginBottom: '20px' }}>
         <h3>示例1：基础用法</h3>
         <button onClick={basicUsage}>显示基础状态面板</button>
@@ -162,7 +162,13 @@ const ExampleUsage: React.FC = () => {
         <button onClick={dynamicDataUsage}>显示动态状态面板</button>
       </div>
 
-      <div style={{ marginTop: '40px', padding: '20px', backgroundColor: '#f5f5f5' }}>
+      <div
+        style={{
+          marginTop: '40px',
+          padding: '20px',
+          backgroundColor: '#f5f5f5',
+        }}
+      >
         <h4>使用说明：</h4>
         <ol>
           <li>点击按钮后会配置相应的状态面板</li>
@@ -176,4 +182,4 @@ const ExampleUsage: React.FC = () => {
   );
 };
 
-export default ExampleUsage; 
+export default ExampleUsage;

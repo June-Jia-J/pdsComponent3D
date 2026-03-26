@@ -3,9 +3,10 @@
  * @Date: 2025-08-04 14:41:07
  * @LastEditTime: 2025-08-19 16:32:25
  * @LastEditors: jiajing
- * @Description:
+ * @Description: PDS 3D Component Demo - 集成场景配置系统
  */
-import { StrictMode } from 'react';
+/* global navigator alert Blob URL prompt */
+import { StrictMode, useState, useCallback, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import GLTFViewer from './components/GLTFViewer';
@@ -14,21 +15,10 @@ import { Leva } from 'leva';
 import { ModelFile } from '@/types';
 import globalData, { setApp } from '@/store/globalData';
 import { decalConfigs } from '../public/const';
-// // 创建一个示例GLTF模型URL（使用一个公开的3D模型）
-// const sampleModelUrl = model5.url;
 
 const sampleModel = model7 as ModelFile;
 
-// 获取当前视角参数的处理函数
-const handleGetCurrentViewState = () => {
-  if (globalData.app && globalData.app.getCurrentViewState) {
-    const viewState = globalData.app.getCurrentViewState();
-    console.log('当前视角参数:', viewState);
-  } else {
-    console.log('API 尚未初始化，请等待模型加载完成后再试');
-  }
-};
-
+// 设置全局应用数据
 setApp({
   publicPath: './public',
 });
@@ -304,9 +294,9 @@ setApp({
     '220kV-TR_主变_BézierCurve004',
     '220kV-TR_主变_BézierCurve005',
     '220kV-TR_主变_BézierCurve006',
+    '220kV-TR_主变_BézierCurve007',
     '220kV-TR_主变_box_01',
     '220kV-TR_主变_box',
-    '220kV-TR_主变_BézierCurve007',
   ],
 });
 
@@ -323,9 +313,65 @@ setApp({
   ],
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <Leva />
+// 场景配置 Demo 组件
+function SceneConfigDemo() {
+  const [pickResult, setPickResult] = useState<any>(null);
+  const [showSceneConfigUI, setShowSceneConfigUI] = useState(true);
+
+  // 处理拾取结果
+  const handlePickingResult = useCallback((result: any) => {
+    setPickResult(result);
+    console.log('📍 拾取结果:', result);
+  }, []);
+
+  // 获取当前视角参数
+  const handleGetCurrentViewState = useCallback(() => {
+    if (globalData.app && globalData.app.getCurrentViewState) {
+      const viewState = globalData.app.getCurrentViewState();
+      console.log('📷 当前视角参数:', viewState);
+
+      // 复制到剪贴板
+      const viewStateText = JSON.stringify(viewState, null, 2);
+      navigator.clipboard.writeText(viewStateText).then(() => {
+        alert('视角参数已复制到剪贴板:\n' + viewStateText);
+      });
+    } else {
+      console.log('API 尚未初始化，请等待模型加载完成后再试');
+    }
+  }, []);
+
+  // 导出场景配置
+  const handleExportConfig = useCallback(() => {
+    if (globalData.app?.sceneConfigAPI?.exportConfig) {
+      const config = globalData.app.sceneConfigAPI.exportConfig();
+      console.log('📦 场景配置:', config);
+
+      // 下载配置文件
+      const blob = new Blob([config], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `scene-config-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // 保存书签
+  const handleSaveBookmark = useCallback(() => {
+    if (globalData.app?.sceneConfigAPI?.saveBookmark) {
+      const name = prompt(
+        '请输入书签名称:',
+        `书签 ${new Date().toLocaleTimeString()}`
+      );
+      if (name) {
+        const bookmark = globalData.app.sceneConfigAPI.saveBookmark(name);
+        console.log('🔖 书签已保存:', bookmark);
+      }
+    }
+  }, []);
+
+  return (
     <div
       style={{
         width: '100vw',
@@ -335,41 +381,95 @@ createRoot(document.getElementById('root')!).render(
         fontFamily: 'Arial, sans-serif',
       }}
     >
+      {/* 顶部控制栏 */}
       <header
         style={{
-          padding: '20px',
-          // backgroundColor: "#f0f0f0",
-          // borderBottom: "1px solid #ddd",
+          padding: '12px 20px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          zIndex: 1000,
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1001,
+          background:
+            'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)',
+          pointerEvents: 'none',
         }}
       >
-        {/* <div>
-          <h1>PDS 3D Component Demo</h1>
-          <p>GLTF Viewer 组件调试环境</p>
-        </div> */}
-        <button
-          onClick={handleGetCurrentViewState}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          获取当前视角参数
-        </button>
+        <div style={{ color: '#fff', pointerEvents: 'auto' }}>
+          <h1 style={{ margin: 0, fontSize: 18 }}>PDS 3D 场景配置系统</h1>
+          <p style={{ margin: '4px 0 0 0', fontSize: 12, opacity: 0.8 }}>
+            集成射线拾取、相机书签、光影预设
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, pointerEvents: 'auto' }}>
+          <button
+            onClick={() => setShowSceneConfigUI(!showSceneConfigUI)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: showSceneConfigUI ? '#28a745' : '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            {showSceneConfigUI ? '隐藏配置UI' : '显示配置UI'}
+          </button>
+
+          <button
+            onClick={handleSaveBookmark}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            🔖 保存书签
+          </button>
+
+          <button
+            onClick={handleGetCurrentViewState}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#17a2b8',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            📷 获取视角
+          </button>
+
+          <button
+            onClick={handleExportConfig}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#ffc107',
+              color: '#000',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            📦 导出配置
+          </button>
+        </div>
       </header>
 
-      <main style={{ flex: 1 }}>
+      {/* 主视图区域 */}
+      <main style={{ flex: 1, position: 'relative' }}>
         <GLTFViewer
           decalConfigs={decalConfigs}
           modelList={[sampleModel]}
@@ -392,41 +492,333 @@ createRoot(document.getElementById('root')!).render(
           ambientLightIntensity={0.2}
           directionalLightIntensity={0.5}
           directionalLightPosition={[10, 10, 5]}
-          onLoad={() => console.log('模型加载完成')}
-          onProgress={progress => console.log(`加载进度: ${progress}%`)}
-          onError={error => console.error('加载错误:', error)}
-          // boundingBoxConfig={{
-          //   enabled: true,
-          //   showBox: true,
-          //   showCenter: true,
-          //   boxColor: "#00ff00",
-          //   centerColor: "#ff0000",
-          //   centerSize: 0.1,
-          //   lineWidth: 2,
-          // }}
+          onLoad={() => console.log('✅ 模型加载完成')}
+          onProgress={progress => console.log(`📊 加载进度: ${progress}%`)}
+          onError={error => console.error('❌ 加载错误:', error)}
           deviceLabelConfig={{
             enabled: true,
             globalVisible: true,
             autoPosition: true,
             defaultOffset: [0, 0.5, 0],
-            positionMode: 'robust-bbox', // 使用新的稳定计算模式 | 备用: 'bbox-center'
+            positionMode: 'robust-bbox',
             labels: deviceLabels,
           }}
-          // cordonConfig={[
-          //   {
-          //     enabled: true,
-          //     areaModelNames: globalData.app.focusModelNames.filter(item => item.startsWith("110kV-GIS")), // 区域模型名称数组
-          //     distance: 0.6, // 警戒线距离模型边缘的距离
-          //     color: "rgba(255, 0, 0, 1)", // 警戒线颜色
-          //     lineWidth: 2, // 警戒线宽度
-          //     lineCount: 10, // 警戒线行数
-          //     lineSpacing: 0.2, // 警戒线间距
-          //     visible: true, // 是否可见
-          //     entryPoint: [0.8, 0.1, 9.6],
-          //   }
-          // ]}
         />
+
+        {/* 场景配置 UI 层 */}
+        {showSceneConfigUI && (
+          <SceneConfigUILayer onPickingResult={handlePickingResult} />
+        )}
+
+        {/* 拾取结果显示 */}
+        {pickResult && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 80,
+              left: 20,
+              backgroundColor: 'rgba(0, 0, 0, 0.85)',
+              borderRadius: 8,
+              padding: 16,
+              color: '#fff',
+              fontFamily: 'monospace',
+              fontSize: 12,
+              maxWidth: 300,
+              zIndex: 1000,
+            }}
+          >
+            <div
+              style={{ fontWeight: 'bold', marginBottom: 8, color: '#4ade80' }}
+            >
+              🎯 最近拾取结果
+            </div>
+            <div>对象: {pickResult.object?.name || '(未命名)'}</div>
+            <div>ID: {pickResult.object?.id}</div>
+            <div>
+              世界坐标:
+              {pickResult.worldPosition?.x?.toFixed(2)},
+              {pickResult.worldPosition?.y?.toFixed(2)},
+              {pickResult.worldPosition?.z?.toFixed(2)}
+            </div>
+            <div>距离: {pickResult.distance?.toFixed(3)}m</div>
+          </div>
+        )}
       </main>
+
+      {/* 底部说明 */}
+      <footer
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '10px 20px',
+          background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+          color: '#fff',
+          fontSize: 12,
+          pointerEvents: 'none',
+          zIndex: 1000,
+        }}
+      >
+        <div style={{ opacity: 0.8 }}>
+          💡 提示: 点击场景中的对象可查看拾取信息 | 使用左侧面板切换光影预设 |
+          使用右侧面板管理视角书签
+        </div>
+      </footer>
     </div>
+  );
+}
+
+// 场景配置 UI 层组件
+function SceneConfigUILayer({
+  onPickingResult,
+}: {
+  /* eslint-disable no-unused-vars */
+  onPickingResult: (result: any) => void;
+  /* eslint-enable no-unused-vars */
+}) {
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [lightingPresets, setLightingPresets] = useState<any[]>([]);
+  const [activePresetId, setActivePresetId] = useState('default-daylight');
+
+  // 刷新书签列表
+  const refreshBookmarks = useCallback(() => {
+    if (globalData.app?.sceneConfigAPI?.getBookmarks) {
+      setBookmarks(globalData.app.sceneConfigAPI.getBookmarks());
+    }
+  }, []);
+
+  // 刷新光影预设
+  const refreshPresets = useCallback(() => {
+    if (globalData.app?.sceneConfigAPI?.getLightingPresets) {
+      setLightingPresets(globalData.app.sceneConfigAPI.getLightingPresets());
+    }
+  }, []);
+
+  // 恢复书签
+  const restoreBookmark = useCallback((id: string) => {
+    if (globalData.app?.sceneConfigAPI?.restoreBookmark) {
+      globalData.app.sceneConfigAPI.restoreBookmark(id, { duration: 1000 });
+    }
+  }, []);
+
+  // 应用光影预设
+  const applyPreset = useCallback((id: string) => {
+    if (globalData.app?.sceneConfigAPI?.applyLightingPreset) {
+      const success = globalData.app.sceneConfigAPI.applyLightingPreset(id);
+      if (success) {
+        setActivePresetId(id);
+      }
+    }
+  }, []);
+
+  // 删除书签
+  const removeBookmark = useCallback(
+    (id: string) => {
+      if (globalData.app?.sceneConfigAPI?.removeBookmark) {
+        globalData.app.sceneConfigAPI.removeBookmark(id);
+        refreshBookmarks();
+      }
+    },
+    [refreshBookmarks]
+  );
+
+  // 初始刷新
+  useEffect(() => {
+    refreshBookmarks();
+    refreshPresets();
+  }, [refreshBookmarks, refreshPresets]);
+
+  return (
+    <>
+      {/* 光影预设面板 - 左上 */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 80,
+          left: 20,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          borderRadius: 8,
+          padding: 16,
+          minWidth: 200,
+          color: '#fff',
+          zIndex: 1000,
+        }}
+      >
+        <h3 style={{ margin: '0 0 12px 0', fontSize: 14 }}>💡 光影预设</h3>
+        <div style={{ maxHeight: 250, overflowY: 'auto' }}>
+          {lightingPresets.map(preset => (
+            <div
+              key={preset.id}
+              onClick={() => applyPreset(preset.id)}
+              style={{
+                padding: '8px 12px',
+                marginBottom: 6,
+                backgroundColor:
+                  preset.id === activePresetId
+                    ? 'rgba(0, 123, 255, 0.4)'
+                    : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 13,
+                border:
+                  preset.id === activePresetId
+                    ? '1px solid #007bff'
+                    : '1px solid transparent',
+              }}
+            >
+              {preset.name}
+              {preset.id === activePresetId && (
+                <span style={{ marginLeft: 8 }}>✓</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 相机书签面板 - 右上 */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 80,
+          right: 20,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          borderRadius: 8,
+          padding: 16,
+          minWidth: 220,
+          color: '#fff',
+          zIndex: 1000,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: 14 }}>🔖 视角书签</h3>
+          <button
+            onClick={refreshBookmarks}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              borderRadius: 4,
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+          >
+            刷新
+          </button>
+        </div>
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          {bookmarks.length === 0 ? (
+            <div style={{ color: '#888', fontSize: 12, padding: '10px 0' }}>
+              暂无书签，点击"保存书签"创建
+            </div>
+          ) : (
+            bookmarks.map(bookmark => (
+              <div
+                key={bookmark.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px',
+                  marginBottom: 6,
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: 4,
+                  gap: 8,
+                }}
+              >
+                <div style={{ flex: 1, fontSize: 12 }}>
+                  <div style={{ fontWeight: 'bold' }}>{bookmark.name}</div>
+                  <div style={{ color: '#888', fontSize: 10 }}>
+                    {new Date(bookmark.createdAt).toLocaleString('zh-CN', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+                <button
+                  onClick={() => restoreBookmark(bookmark.id)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#28a745',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                  }}
+                >
+                  恢复
+                </button>
+                <button
+                  onClick={() => removeBookmark(bookmark.id)}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#dc3545',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* 拾取提示 - 左下 */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 80,
+          left: 20,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          borderRadius: 8,
+          padding: '10px 16px',
+          color: '#fff',
+          fontSize: 12,
+          zIndex: 1000,
+          cursor: 'crosshair',
+        }}
+        onClick={e => {
+          // 执行拾取
+          if (globalData.app?.sceneConfigAPI?.pick) {
+            const result = globalData.app.sceneConfigAPI.pick(
+              e.clientX,
+              e.clientY
+            );
+            if (result) {
+              onPickingResult(result);
+            } else {
+              console.log('未拾取到对象，点击坐标:', e.clientX, e.clientY);
+            }
+          } else {
+            console.log('sceneConfigAPI.pick 不可用');
+          }
+        }}
+      >
+        🖱️ 点击场景中的对象查看拾取信息
+      </div>
+    </>
+  );
+}
+
+// 渲染应用
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Leva />
+    <SceneConfigDemo />
   </StrictMode>
 );

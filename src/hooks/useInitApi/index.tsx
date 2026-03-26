@@ -28,6 +28,7 @@ import { TcordonConfigItem } from '@/types';
 import { cordonConfigAtom, defaultCordonConfig } from '@/atoms/cordonConfig';
 import { useFlyToView } from '../useCamera/flyToView';
 import { flyingAbleAtom } from '../../atoms/animate';
+import { useSceneConfig } from '@/scene-config';
 
 type TPosition<T extends 'object' | 'array' = 'object'> = T extends 'object'
   ? {
@@ -148,6 +149,14 @@ const useInitApi = () => {
   });
 
   const setCordConfigState = useSetAtom(cordonConfigAtom);
+
+  // 场景配置系统
+  const sceneConfig = useSceneConfig({
+    persist: true,
+    onConfigChange: config => {
+      console.log('📦 场景配置已更新:', config.name);
+    },
+  });
 
   const changeModelColorRef = useRef<TChangeModelColor>(() => {});
 
@@ -1031,6 +1040,37 @@ const useInitApi = () => {
       flyToObject: (model: Object3D, options = {}, onFinish = () => {}) => {
         flyToObjectRef.current(model, options, onFinish);
       },
+      // 场景配置系统 API
+      sceneConfig: sceneConfig.config,
+      sceneConfigAPI: {
+        // 坐标与拾取
+        pick: sceneConfig.pick,
+        addAnchor: sceneConfig.addAnchor,
+        updateAnchor: sceneConfig.updateAnchor,
+        removeAnchor: sceneConfig.removeAnchor,
+        getAnchors: sceneConfig.getAnchors,
+        getAnchorById: sceneConfig.getAnchorById,
+        getAnchorsByBusinessId: sceneConfig.getAnchorsByBusinessId,
+        getBoundingBox: sceneConfig.getBoundingBox,
+        // 相机书签
+        saveBookmark: sceneConfig.saveBookmark,
+        updateBookmark: sceneConfig.updateBookmark,
+        removeBookmark: sceneConfig.removeBookmark,
+        getBookmarks: sceneConfig.getBookmarks,
+        restoreBookmark: sceneConfig.restoreBookmark,
+        generateThumbnail: sceneConfig.generateThumbnail,
+        // 光影预设
+        applyLightingPreset: sceneConfig.applyLightingPreset,
+        addLightingPreset: sceneConfig.addLightingPreset,
+        updateLightingPreset: sceneConfig.updateLightingPreset,
+        removeLightingPreset: sceneConfig.removeLightingPreset,
+        getLightingPresets: sceneConfig.getLightingPresets,
+        // 配置整体操作
+        exportConfig: sceneConfig.exportConfig,
+        importConfig: sceneConfig.importConfig,
+        resetToDefault: sceneConfig.resetToDefault,
+        getCurrentConfig: sceneConfig.getCurrentConfig,
+      },
     });
 
     setShow({
@@ -1038,6 +1078,9 @@ const useInitApi = () => {
         removeObjectRef.current(object);
       },
     });
+
+    // 初始化场景配置
+    sceneConfig.initConfig();
   }, []);
 
   useEffect(() => {
@@ -1054,6 +1097,44 @@ const useInitApi = () => {
     setApp({ scene: scene });
     setShow({ sceneHelpers: scene, scene: scene });
   }, [scene]);
+
+  // 当 camera 和 scene 准备好后，重新设置 sceneConfigAPI
+  useEffect(() => {
+    if (camera && scene) {
+      console.log('🎬 Camera 和 Scene 已准备好，更新 sceneConfigAPI');
+      setApp({
+        sceneConfigAPI: {
+          // 坐标与拾取
+          pick: sceneConfig.pick,
+          addAnchor: sceneConfig.addAnchor,
+          updateAnchor: sceneConfig.updateAnchor,
+          removeAnchor: sceneConfig.removeAnchor,
+          getAnchors: sceneConfig.getAnchors,
+          getAnchorById: sceneConfig.getAnchorById,
+          getAnchorsByBusinessId: sceneConfig.getAnchorsByBusinessId,
+          getBoundingBox: sceneConfig.getBoundingBox,
+          // 相机书签
+          saveBookmark: sceneConfig.saveBookmark,
+          updateBookmark: sceneConfig.updateBookmark,
+          removeBookmark: sceneConfig.removeBookmark,
+          getBookmarks: sceneConfig.getBookmarks,
+          restoreBookmark: sceneConfig.restoreBookmark,
+          generateThumbnail: sceneConfig.generateThumbnail,
+          // 光影预设
+          applyLightingPreset: sceneConfig.applyLightingPreset,
+          addLightingPreset: sceneConfig.addLightingPreset,
+          updateLightingPreset: sceneConfig.updateLightingPreset,
+          removeLightingPreset: sceneConfig.removeLightingPreset,
+          getLightingPresets: sceneConfig.getLightingPresets,
+          // 配置整体操作
+          exportConfig: sceneConfig.exportConfig,
+          importConfig: sceneConfig.importConfig,
+          resetToDefault: sceneConfig.resetToDefault,
+          getCurrentConfig: sceneConfig.getCurrentConfig,
+        },
+      });
+    }
+  }, [camera, scene, sceneConfig]);
 };
 
 export default useInitApi;

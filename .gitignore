@@ -11,6 +11,7 @@ dist/
 build/
 lib/
 es/
+public/Upload/Model/
 *.tsbuildinfo
 
 # 环境变量
