@@ -3,9 +3,9 @@
  * @Date: 2025-08-04 14:41:07
  * @LastEditTime: 2025-08-19 16:32:25
  * @LastEditors: jiajing
- * @Description:
+ * @Description: 场景配置系统集成演示
  */
-import { StrictMode } from 'react';
+import { StrictMode, useState, useCallback, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import GLTFViewer from './components/GLTFViewer';
@@ -14,12 +14,16 @@ import { Leva } from 'leva';
 import { ModelFile } from '@/types';
 import globalData, { setApp } from '@/store/globalData';
 import { decalConfigs } from '../public/const';
-// // 创建一个示例GLTF模型URL（使用一个公开的3D模型）
-// const sampleModelUrl = model5.url;
+import {
+  SceneConfigProvider,
+  SceneConfigPanel,
+  SceneConfigBridge,
+  useSceneConfig,
+} from './components/SceneConfigManager';
+import { SceneConfigAPI, LightingPreset } from '@/types/sceneConfig';
 
 const sampleModel = model7 as ModelFile;
 
-// 获取当前视角参数的处理函数
 const handleGetCurrentViewState = () => {
   if (globalData.app && globalData.app.getCurrentViewState) {
     const viewState = globalData.app.getCurrentViewState();
@@ -323,110 +327,240 @@ setApp({
   ],
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <Leva />
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: 'Arial, sans-serif',
-      }}
+const SceneConfigDemo: React.FC = () => {
+  const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [sceneApi, setSceneApi] = useState<SceneConfigAPI | null>(null);
+  const [currentPreset, setCurrentPreset] = useState<string>('默认');
+  const [bookmarkCount, setBookmarkCount] = useState(0);
+  const [anchorCount, setAnchorCount] = useState(0);
+
+  const handleCreateBookmark = useCallback(() => {
+    if (!sceneApi) return;
+    const bookmark = sceneApi.bookmarks.getCurrentViewAsBookmark(`视角 ${Date.now()}`);
+    sceneApi.bookmarks.createBookmark(bookmark.name, bookmark);
+    setBookmarkCount(sceneApi.bookmarks.getBookmarks().length);
+    console.log('创建书签:', bookmark);
+  }, [sceneApi]);
+
+  const handleExportConfig = useCallback(() => {
+    if (!sceneApi) return;
+    const config = sceneApi.exportConfig();
+    console.log('导出配置:', config);
+    navigator.clipboard.writeText(config);
+    alert('配置已复制到剪贴板');
+  }, [sceneApi]);
+
+  const handlePickModel = useCallback(() => {
+    if (!sceneApi) return;
+    const result = sceneApi.picking.pickModelByName('110kV-GIS_104_CB_PDS-S500-AE');
+    if (result) {
+      console.log('拾取结果:', result);
+      sceneApi.picking.createAnchor(
+        '设备锚点',
+        result.worldPosition!,
+        { businessId: 'device-001', modelName: result.object?.name }
+      );
+      setAnchorCount(sceneApi.picking.getAnchors().length);
+    }
+  }, [sceneApi]);
+
+  useEffect(() => {
+    if (sceneApi?.picking && sceneApi?.bookmarks) {
+      setBookmarkCount(sceneApi.bookmarks.getBookmarks().length);
+      setAnchorCount(sceneApi.picking.getAnchors().length);
+    }
+  }, [sceneApi]);
+
+  return (
+    <SceneConfigProvider
+      autoSave={true}
+      storageKey='pds-scene-config-demo'
     >
-      <header
+      <Leva />
+      <div
         style={{
-          padding: '20px',
-          // backgroundColor: "#f0f0f0",
-          // borderBottom: "1px solid #ddd",
+          width: '100vw',
+          height: '100vh',
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          zIndex: 1000,
+          flexDirection: 'column',
+          fontFamily: 'Arial, sans-serif',
         }}
       >
-        {/* <div>
-          <h1>PDS 3D Component Demo</h1>
-          <p>GLTF Viewer 组件调试环境</p>
-        </div> */}
-        <button
-          onClick={handleGetCurrentViewState}
+        <header
           style={{
-            padding: '10px 20px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '14px',
+            padding: '20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 1000,
+            gap: '10px',
           }}
         >
-          获取当前视角参数
-        </button>
-      </header>
+          <button
+            onClick={() => setShowConfigPanel(!showConfigPanel)}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: showConfigPanel ? '#28a745' : '#17a2b8',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            {showConfigPanel ? '隐藏配置面板' : '场景配置'}
+          </button>
+          <button
+            onClick={handleGetCurrentViewState}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            获取当前视角
+          </button>
+          <button
+            onClick={handleCreateBookmark}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#6f42c1',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            保存书签 ({bookmarkCount})
+          </button>
+          <button
+            onClick={handlePickModel}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#fd7e14',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            创建锚点 ({anchorCount})
+          </button>
+          <button
+            onClick={handleExportConfig}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#20c997',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            导出配置
+          </button>
+        </header>
 
-      <main style={{ flex: 1 }}>
-        <GLTFViewer
-          decalConfigs={decalConfigs}
-          modelList={[sampleModel]}
-          width='100%'
-          height='100%'
-          position={[0, 0, 0]}
-          rotation={[0, 0, 0]}
-          scale={1}
-          cameraPosition={[
-            -15.389094920454996, 8.092493707165996, 16.024169959225027,
-          ]}
-          cameraTarget={[
-            -4.60746852203857, 2.882832258799233, 6.392122130315743,
-          ]}
-          backgroundColor='black'
-          enableShadows={true}
-          enableControls={true}
-          autoRotate={false}
-          autoRotateSpeed={2}
-          ambientLightIntensity={0.2}
-          directionalLightIntensity={0.5}
-          directionalLightPosition={[10, 10, 5]}
-          onLoad={() => console.log('模型加载完成')}
-          onProgress={progress => console.log(`加载进度: ${progress}%`)}
-          onError={error => console.error('加载错误:', error)}
-          // boundingBoxConfig={{
-          //   enabled: true,
-          //   showBox: true,
-          //   showCenter: true,
-          //   boxColor: "#00ff00",
-          //   centerColor: "#ff0000",
-          //   centerSize: 0.1,
-          //   lineWidth: 2,
-          // }}
-          deviceLabelConfig={{
-            enabled: true,
-            globalVisible: true,
-            autoPosition: true,
-            defaultOffset: [0, 0.5, 0],
-            positionMode: 'robust-bbox', // 使用新的稳定计算模式 | 备用: 'bbox-center'
-            labels: deviceLabels,
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '20px',
+            zIndex: 1000,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: '10px 15px',
+            borderRadius: '5px',
+            color: 'white',
+            fontSize: '12px',
           }}
-          // cordonConfig={[
-          //   {
-          //     enabled: true,
-          //     areaModelNames: globalData.app.focusModelNames.filter(item => item.startsWith("110kV-GIS")), // 区域模型名称数组
-          //     distance: 0.6, // 警戒线距离模型边缘的距离
-          //     color: "rgba(255, 0, 0, 1)", // 警戒线颜色
-          //     lineWidth: 2, // 警戒线宽度
-          //     lineCount: 10, // 警戒线行数
-          //     lineSpacing: 0.2, // 警戒线间距
-          //     visible: true, // 是否可见
-          //     entryPoint: [0.8, 0.1, 9.6],
-          //   }
-          // ]}
-        />
-      </main>
-    </div>
+        >
+          <div>当前光影预设: {currentPreset}</div>
+          <div>书签数量: {bookmarkCount}</div>
+          <div>锚点数量: {anchorCount}</div>
+        </div>
+
+        <main style={{ flex: 1 }}>
+          <GLTFViewer
+            decalConfigs={decalConfigs}
+            modelList={[sampleModel]}
+            width='100%'
+            height='100%'
+            position={[0, 0, 0]}
+            rotation={[0, 0, 0]}
+            scale={1}
+            cameraPosition={[
+              -15.389094920454996, 8.092493707165996, 16.024169959225027,
+            ]}
+            cameraTarget={[
+              -4.60746852203857, 2.882832258799233, 6.392122130315743,
+            ]}
+            backgroundColor='black'
+            enableShadows={true}
+            enableControls={true}
+            autoRotate={false}
+            autoRotateSpeed={2}
+            ambientLightIntensity={0.2}
+            directionalLightIntensity={0.5}
+            directionalLightPosition={[10, 10, 5]}
+            onLoad={() => console.log('模型加载完成')}
+            onProgress={progress => console.log(`加载进度: ${progress}%`)}
+            onError={error => console.error('加载错误:', error)}
+            deviceLabelConfig={{
+              enabled: true,
+              globalVisible: true,
+              autoPosition: true,
+              defaultOffset: [0, 0.5, 0],
+              positionMode: 'robust-bbox',
+              labels: deviceLabels,
+            }}
+          >
+            <SceneConfigBridge
+              onPresetChange={(preset: LightingPreset) => {
+                setCurrentPreset(preset.name);
+                console.log('光影预设切换:', preset.name);
+              }}
+            />
+            <ApiBridge onApiReady={setSceneApi} />
+          </GLTFViewer>
+        </main>
+
+        {showConfigPanel && (
+          <SceneConfigPanel
+            visible={showConfigPanel}
+            onClose={() => setShowConfigPanel(false)}
+          />
+        )}
+      </div>
+    </SceneConfigProvider>
+  );
+};
+
+const ApiBridge: React.FC<{
+  onApiReady: (api: SceneConfigAPI) => void;
+}> = ({ onApiReady }) => {
+  const api = useSceneConfig();
+  
+  useEffect(() => {
+    if (api.picking && api.bookmarks && api.lighting) {
+      onApiReady(api);
+    }
+  }, [api, onApiReady]);
+  
+  return null;
+};
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <SceneConfigDemo />
   </StrictMode>
 );
