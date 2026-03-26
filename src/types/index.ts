@@ -1,4 +1,5 @@
 import { ThreeEvent } from '@react-three/fiber';
+export * from './sceneConfig';
 import type { MouseEvent, ReactNode, RefObject } from 'react';
 import type {
   Material,

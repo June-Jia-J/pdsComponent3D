@@ -19,7 +19,7 @@ export interface DeviceStatusPanelProps {
   leftItems?: StatusItem[];
   rightItems?: StatusItem[];
   selectedId?: string;
-  model: Object3D;
+  model?: Object3D;
   // eslint-disable-next-line no-unused-vars
   onItemClick?: (id: string) => void;
   onClose?: () => void;
@@ -329,7 +329,7 @@ const StatusPanel: FC<DeviceStatusPanelProps> = ({ onClose, model }) => {
 
   // 计算模型的包围盒和位置
   const calculateModelPosition = useMemo(() => {
-    const box = new Box3().setFromObject(model);
+    const box = model ? new Box3().setFromObject(model) : new Box3();
     const center = new Vector3();
     box.getCenter(center);
 
